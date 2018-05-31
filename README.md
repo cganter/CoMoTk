@@ -7,6 +7,6 @@ Includes documentation with theory and examples.
 
 Current state: Under production.
 
-A related educational abstract for the ISMRM meeting 2018 has been submitted.
+A related educational poster will be presented at the ISMRM meeting 2018.
 
-First release as soon as possible, but before 1st of June 2018 (publication of ISMRM proceedings).
+First release intended to be available then.
