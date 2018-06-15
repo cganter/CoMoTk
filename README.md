@@ -1,12 +1,119 @@
-# CoMoTk
-Configuration Model Toolkit
 
-Simulation software for magnetic resonance imaging, 
-based upon a microscopic motivation of phase graphs.
-Includes documentation with theory and examples.
+# Table of Contents
 
-Current state: Under production.
+1.  [Background](#org2176ebd)
+2.  [The Toolkit](#orgdb133c3)
+3.  [Current State](#orgb4a0cc3)
+4.  [Recommended First Steps](#org7ac3d09)
+5.  [Feedback](#orgf8bf4b3)
 
-A related educational poster will be presented at the ISMRM meeting 2018.
 
-First release intended to be available then.
+<a id="org2176ebd"></a>
+
+# Background
+
+The simulation of sequences or sequence blocks is a recurrent task in magnetic resonance imaging (MRI).
+Nonetheless, the chosen method is often situational and strongly depends on the underlying assumptions.
+While Bloch(-Torrey) equations are completely sufficient, to handle the micropscopic scale,
+their use on the larger voxel scale is rather cumbersome and provides little insight. 
+Here, **extended phase graphs (EPG)** are much better suited, as they allow to predict
+the appearance of echoes and their amplitudes. Nonetheless, they have some limitations as well, 
+e.g., when it comes to
+
+-   quantify susceptibility effects
+-   determine the proper strength of crusher gradients
+-   handle non-periodic sequences
+
+Origin of these difficulties is the somewhat fuzzy definition of EPG states as such, which
+are usually motivated by an early voxel scale Fourier integral.
+
+As shown in the [documentation](doc/configuration_model.pdf), these technical limitations can be overcome in 
+the microscopic **configuration model (CM)**, which is closely related to the EPG formalism,
+but postpones the transition to the voxel scale, until it is actually needed.
+
+
+<a id="orgdb133c3"></a>
+
+# The Toolkit
+
+`CoMoTk` is a Matlab simulation tool, which implements the configuration model. It can be used for a 
+wide range of situations, e.g. simulation of
+
+-   idealized sequences (instantaneous RF pulses, neglecting actual gradients, &#x2026;)
+-   complex sequences (as played out on actual scanners, including finite and selective RF pulses)
+-   sequence block, e.g. selectice RF pulses (pulse design)
+-   susceptibility and/or diffusion effects
+-   &#x2026;
+
+For installation, just add the `matlab/` folder with subdirectories to your Matlab path.
+
+**Important**: A Matlab version of **R2016b** or later is required, since implicit expansion is used a lot.
+
+
+<a id="orgb4a0cc3"></a>
+
+# Current State
+
+`CoMoTk` is currently work in progress and should be functional to the extent as shown in the `examples/`
+folder. The following table gives a brief overview on the actual state.
+
+<table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
+
+
+<colgroup>
+<col  class="org-left" />
+
+<col  class="org-left" />
+
+<col  class="org-left" />
+</colgroup>
+<thead>
+<tr>
+<th scope="col" class="org-left">What</th>
+<th scope="col" class="org-left">Implemented</th>
+<th scope="col" class="org-left">Tested</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td class="org-left">Bloch equations</td>
+<td class="org-left">yes</td>
+<td class="org-left">yes</td>
+</tr>
+
+
+<tr>
+<td class="org-left">Diffusion</td>
+<td class="org-left">partly (isotropic)</td>
+<td class="org-left">no</td>
+</tr>
+
+
+<tr>
+<td class="org-left">Derivatives</td>
+<td class="org-left">yes</td>
+<td class="org-left">no</td>
+</tr>
+</tbody>
+</table>
+
+It will be updated.
+
+
+<a id="org7ac3d09"></a>
+
+# Recommended First Steps
+
+-   The [script](doc/configuration_model.pdf) in the `doc/` folder is crucial to understand the theoretical background on the configuration model and also gives a brief overview on how to use `CoMoTk`.
+-   The scripts in the folders `examples/` and `test/` show typical usage scanarios and should serve as good starting points.
+
+
+<a id="orgf8bf4b3"></a>
+
+# Feedback
+
+Comments? Wishes? Bugs? - Please let me know via the [issue tracker](https://github.com/cganter/CoMoTk/issues).
+
+With respect to bugs: Most helpful are minimum size example scripts, which generate the error.
+
