@@ -1,20 +1,20 @@
 
 # Table of Contents
 
-1.  [Background](#org2176ebd)
-2.  [The Toolkit](#orgdb133c3)
-3.  [Current State](#orgb4a0cc3)
-4.  [Recommended First Steps](#org7ac3d09)
-5.  [Feedback](#orgf8bf4b3)
+1.  [Background](#org7e31182)
+2.  [The Toolkit](#org0f1fc3c)
+3.  [Current State](#org131b39d)
+4.  [Recommended First Steps](#orge037586)
+5.  [Feedback](#org573d2ce)
 
 
-<a id="org2176ebd"></a>
+<a id="org7e31182"></a>
 
 # Background
 
 The simulation of sequences or sequence blocks is a recurrent task in magnetic resonance imaging (MRI).
 Nonetheless, the chosen method is often situational and strongly depends on the underlying assumptions.
-While Bloch(-Torrey) equations are completely sufficient, to handle the micropscopic scale,
+While Bloch(-Torrey) equations are completely sufficient to handle the micropscopic scale,
 their use on the larger voxel scale is rather cumbersome and provides little insight. 
 Here, **extended phase graphs (EPG)** are much better suited, as they allow to predict
 the appearance of echoes and their amplitudes. Nonetheless, they have some limitations as well, 
@@ -32,7 +32,7 @@ the microscopic **configuration model (CM)**, which is closely related to the EP
 but postpones the transition to the voxel scale, until it is actually needed.
 
 
-<a id="orgdb133c3"></a>
+<a id="org0f1fc3c"></a>
 
 # The Toolkit
 
@@ -50,7 +50,7 @@ For installation, just add the `matlab/` folder with subdirectories to your Matl
 **Important**: A Matlab version of **R2016b** or later is required, since implicit expansion is used a lot.
 
 
-<a id="orgb4a0cc3"></a>
+<a id="org131b39d"></a>
 
 # Current State
 
@@ -101,7 +101,7 @@ folder. The following table gives a brief overview on the actual state.
 It will be updated.
 
 
-<a id="org7ac3d09"></a>
+<a id="orge037586"></a>
 
 # Recommended First Steps
 
@@ -109,7 +109,7 @@ It will be updated.
 -   The scripts in the folders `examples/` and `test/` show typical usage scanarios and should serve as good starting points.
 
 
-<a id="orgf8bf4b3"></a>
+<a id="org573d2ce"></a>
 
 # Feedback
 
