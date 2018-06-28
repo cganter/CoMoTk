@@ -2528,6 +2528,16 @@ classdef CoMoTk < matlab.mixin.Copyable
             
             b_is_ok = true;
             
+            % no removal of configurations for cm.epsilon == 0
+            
+            if ( cm.epsilon == 0 )
+                
+                return;
+                
+            end
+            
+            % calculate size of configuration vectors
+            
             abs_m_2 = zeros( cm.alloc_n, 1 );
             abs_m_2( cm.b_n ) = real( sum( reshape( real( cm.m( :, :, cm.b_n ) .* conj( cm.m( :, :, cm.b_n ) ) ), [ 3 * cm.n_tissues, cm.n_conf ] ) ) ).';
             b_small = abs_m_2 < cm.epsilon^2;
@@ -2981,7 +2991,7 @@ classdef CoMoTk < matlab.mixin.Copyable
                 if ( ~isempty( cm.b_EFn ) )
                     
                     cm.b_EFn( rng_n, : ) = false;
-                    cm.EFn( rng_n, : ) = 0;
+                    cm.EFn( :, :, rng_n, : ) = 0;
                     
                 end
                 
@@ -3083,7 +3093,7 @@ classdef CoMoTk < matlab.mixin.Copyable
                 if ( ~isempty( cm.b_EFn ) )
                     
                     cm.b_EFn( :, rng_d ) = false;
-                    cm.EFn( :, rng_d ) = 0;
+                    cm.EFn( :, :, :, rng_d ) = 0;
                     
                 end
                 

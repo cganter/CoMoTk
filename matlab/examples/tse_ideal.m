@@ -27,7 +27,7 @@ while( TR <= num_echos * echo_spacing )
     
 end
 
-% to see diffusion effects due to 2\pi crushers
+% to see diffusion effects due to 2 * pi crushers
 
 resolution_mm = 1; %input( 'In plane resolution [mm] = \n' );
 
