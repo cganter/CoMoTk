@@ -1,14 +1,14 @@
 
 # Table of Contents
 
-1.  [Background](#org8c03221)
-2.  [The Toolkit](#org5301823)
-3.  [Current State](#orgecb5d0c)
-4.  [Recommended First Steps](#orgd0596af)
-5.  [Feedback](#org615ca82)
+1.  [Background](#org8fbc124)
+2.  [The Toolkit](#org944fcc8)
+3.  [Current State](#org7c73e3f)
+4.  [Recommended First Steps](#org1bf6255)
+5.  [Feedback](#orga8ef1d6)
 
 
-<a id="org8c03221"></a>
+<a id="org8fbc124"></a>
 
 # Background
 
@@ -32,7 +32,7 @@ the microscopic **configuration model (CM)**, which is closely related to the EP
 but postpones the transition to the voxel scale, until it is actually needed.
 
 
-<a id="org5301823"></a>
+<a id="org944fcc8"></a>
 
 # The Toolkit
 
@@ -50,7 +50,7 @@ For installation, just add the `matlab/` folder with subdirectories to your Matl
 **Important**: A Matlab version of **R2016b** or later is required, since implicit expansion is used a lot.
 
 
-<a id="orgecb5d0c"></a>
+<a id="org7c73e3f"></a>
 
 # Current State
 
@@ -93,7 +93,7 @@ folder. The following table gives a brief overview on the actual state.
 <tr>
 <td class="org-left">Derivatives</td>
 <td class="org-left">yes</td>
-<td class="org-left">no</td>
+<td class="org-left">yes</td>
 </tr>
 </tbody>
 </table>
@@ -101,7 +101,7 @@ folder. The following table gives a brief overview on the actual state.
 It will be updated.
 
 
-<a id="orgd0596af"></a>
+<a id="org1bf6255"></a>
 
 # Recommended First Steps
 
@@ -109,11 +109,12 @@ It will be updated.
 -   The scripts in the folders `examples/` and `test/` show typical usage scanarios and should serve as good starting points.
 
 
-<a id="org615ca82"></a>
+<a id="orga8ef1d6"></a>
 
 # Feedback
 
-Comments? Wishes? Bugs? - Please let me know via the [issue tracker](https://github.com/cganter/CoMoTk/issues).
+Comments? Wishes? Bugs? - Please let me know via the [issue tracker](https://github.com/cganter/CoMoTk/issues) or write an email to
+[comotk.rad.med@tum.de](mailto:comotk.rad.med@tum.de).
 
 With respect to bugs: Most helpful are minimum size example scripts, which generate the error.
 

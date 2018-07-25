@@ -264,6 +264,7 @@ classdef CoMoTk < matlab.mixin.Copyable
                 
                 cm.n_tissues = length( R1 );
                 cm.w = ones( 1, cm.n_tissues );
+                cm.dom = zeros( 1, 1, cm.n_tissues );
                 
             elseif ( length( R1 ) ~= cm.n_tissues )
                 
@@ -299,6 +300,7 @@ classdef CoMoTk < matlab.mixin.Copyable
                 
                 cm.n_tissues = length( R2 );
                 cm.w = ones( 1, cm.n_tissues );
+                cm.dom = zeros( 1, 1, cm.n_tissues );
                 
             elseif ( length( R2 ) ~= cm.n_tissues )
                 
@@ -334,6 +336,7 @@ classdef CoMoTk < matlab.mixin.Copyable
                 
                 cm.n_tissues = length( D );
                 cm.w = ones( 1, cm.n_tissues );
+                cm.dom = zeros( 1, 1, cm.n_tissues );
                 
             elseif ( length( D ) ~= cm.n_tissues )
                 
@@ -896,8 +899,8 @@ classdef CoMoTk < matlab.mixin.Copyable
                     
                     dRotMat_dPhase = zeros( 3 );
                     
-                    dRotMat_dPhase( 1, 2 ) = 1i * Rotmat( 1, 2 );
-                    dRotMat_dPhase( 1, 3 ) = 2 * 1i * Rotmat( 1, 3 );
+                    dRotMat_dPhase( 1, 2 ) = 1i * RotMat( 1, 2 );
+                    dRotMat_dPhase( 1, 3 ) = 2 * 1i * RotMat( 1, 3 );
                     dRotMat_dPhase( 2, 1 ) = - conj( dRotMat_dPhase( 1, 2 ) );
                     dRotMat_dPhase( 2, 3 ) = - dRotMat_dPhase( 1, 2 );
                     dRotMat_dPhase( 3, 1 ) = conj( dRotMat_dPhase( 1, 3 ) );
@@ -1030,9 +1033,9 @@ classdef CoMoTk < matlab.mixin.Copyable
                         [ ~, i_ ] = find( cm.ds == handle_time );
                         
                         if ( ~isempty( i_ ) && ...
-                              max( abs( cm.s( :, i_ ) - varargin{ i + 1 }( : ) ) ) > 0 )
+                              max( abs( cm.s( :, idx_time ) - varargin{ i + 1 }( : ) ) ) > 0 )
                             
-                            error( 'Derivative of variable shape makes no sense.' );
+                          error( 'Derivative of variable shape makes no sense.' );
                             
                         end
                         
@@ -1123,9 +1126,9 @@ classdef CoMoTk < matlab.mixin.Copyable
                 else
                     
                     cm.dm_dR1( 1, :, cm.idx_up( cm.b_n, idx_time ) ) = ...
-                        cm.EFn( 2, cm.dR1, cm.b_n, idx_time ) .* cm.dm_dR1( 1, :, cm.b_n );
+                        cm.EFn( 1, cm.dR1, cm.b_n, idx_time ) .* cm.dm_dR1( 1, :, cm.b_n );
                     
-                    cm.dm_dR1( 2, :, cm.b_n ) = cm.EFn( 2, :, cm.b_n, idx_time ) .* ...
+                    cm.dm_dR1( 2, :, cm.b_n ) = cm.EFn( 2, cm.dR1, cm.b_n, idx_time ) .* ...
                         ( cm.dm_dR1( 2, :, cm.b_n ) - cm.tau( idx_time ) .* cm.m( 2, cm.dR1, cm.b_n ) ) ;
                     
                     cm.dm_dR1( 3, :, cm.idx_do( cm.b_n, idx_time ) ) = ...
@@ -1133,6 +1136,9 @@ classdef CoMoTk < matlab.mixin.Copyable
                     
                 end
                 
+                cm.dm_dR1( 1, :, b_do_free_time ) = 0;
+                cm.dm_dR1( 3, :, b_up_free_time ) = 0;
+
                 cm.dm_dR1( 2, :, cm.null_idx ) = cm.dm_dR1( 2, :, cm.null_idx ) + ...
                     cm.w( cm.dR1 ) .* cm.tau( idx_time ) .* cm.E( 1, cm.dR1, idx_time );
                 
@@ -1166,23 +1172,29 @@ classdef CoMoTk < matlab.mixin.Copyable
                     
                 end
                 
+                cm.dm_dR2( 1, :, b_do_free_time ) = 0;
+                cm.dm_dR2( 3, :, b_up_free_time ) = 0;
+
             end
             
             % D derivative(s)
             
             if ( cm.len_dD > 0 )
-                
+          
                 cm.dm_dD( 1, :, cm.idx_up( cm.b_n, idx_time ) ) = ...
                     cm.EFn( 1, cm.dD, cm.b_n, idx_time ) .* cm.dm_dD( 1, :, cm.b_n ) + ...
-                    cm.dEFn_dD( 1, cm.dD, cm.b_n, idx_time ) .* cm.m( 1, cm.dD, cm.b_n );
+                    cm.dEFn_dD( 1, :, cm.b_n, idx_time ) .* cm.m( 1, cm.dD, cm.b_n );
                 
                 cm.dm_dD( 2, :, cm.b_n ) = ...
                     cm.EFn( 2, cm.dD, cm.b_n, idx_time ) .* cm.dm_dD( 2, :, cm.b_n ) + ...
-                    cm.dEFn_dD( 2, cm.dD, cm.b_n, idx_time ) .* cm.m( 2, cm.dD, cm.b_n );
+                    cm.dEFn_dD( 2, :, cm.b_n, idx_time ) .* cm.m( 2, cm.dD, cm.b_n );
                 
                 cm.dm_dD( 3, :, cm.idx_do( cm.b_n, idx_time ) ) = ...
                     cm.EFn( 3, cm.dD, cm.b_n, idx_time ) .* cm.dm_dD( 3, :, cm.b_n ) + ...
-                    cm.dEFn_dD( 3, cm.dD, cm.b_n, idx_time ) .* cm.m( 3, cm.dD, cm.b_n );
+                    cm.dEFn_dD( 3, :, cm.b_n, idx_time ) .* cm.m( 3, cm.dD, cm.b_n );
+                
+                cm.dm_dD( 1, :, b_do_free_time ) = 0;
+                cm.dm_dD( 3, :, b_up_free_time ) = 0;
                 
             end
             
@@ -1214,6 +1226,9 @@ classdef CoMoTk < matlab.mixin.Copyable
                     
                 end
                 
+                cm.dm_dB1( 1, :, b_do_free_time ) = 0;
+                cm.dm_dB1( 3, :, b_up_free_time ) = 0;
+                
             end
             
             % FlipAngle derivative(s)
@@ -1244,6 +1259,9 @@ classdef CoMoTk < matlab.mixin.Copyable
                     
                 end
                 
+                cm.dm_dFlipAngle( 1, :, b_do_free_time, : ) = 0;
+                cm.dm_dFlipAngle( 3, :, b_up_free_time, : ) = 0;
+                
             end
             
             % Phase derivative(s)
@@ -1273,6 +1291,9 @@ classdef CoMoTk < matlab.mixin.Copyable
                         cm.EFn( 3, :, cm.b_n, idx_time ) .* cm.dm_dPhase( 3, :, cm.b_n, : );
                     
                 end
+                
+                cm.dm_dPhase( 1, :, b_do_free_time, : ) = 0;
+                cm.dm_dPhase( 3, :, b_up_free_time, : ) = 0;
                 
             end
             
@@ -1322,13 +1343,13 @@ classdef CoMoTk < matlab.mixin.Copyable
                     else
                         
                         cm.dm_dtau( 1, :, cm.idx_up( cm.b_n, idx_time ), i ) = cm.dm_dtau( 1, :, cm.idx_up( cm.b_n, idx_time ), i ) + ...
-                            cm.dEFn_dtau( 1, :, cm.b_n, idx_time ) .* cm.m( 1, :, cm.b_n );
+                            cm.dEFn_dtau( 1, :, cm.b_n, i ) .* cm.m( 1, :, cm.b_n );
                         
                         cm.dm_dtau( 2, :, cm.b_n, i ) = cm.dm_dtau( 2, :, cm.b_n, i ) + ...
-                            cm.dEFn_dtau( 2, :, cm.b_n, idx_time ) .* cm.m( 2, :, cm.b_n );
+                            cm.dEFn_dtau( 2, :, cm.b_n, i ) .* cm.m( 2, :, cm.b_n );
                         
                         cm.dm_dtau( 3, :, cm.idx_do( cm.b_n, idx_time ), i ) = cm.dm_dtau( 3, :, cm.idx_do( cm.b_n, idx_time ), i ) + ...
-                            cm.dEFn_dtau( 3, :, cm.b_n, idx_time ) .* cm.m( 3, :, cm.b_n );
+                            cm.dEFn_dtau( 3, :, cm.b_n, i ) .* cm.m( 3, :, cm.b_n );
                         
                     end
                     
@@ -1336,6 +1357,9 @@ classdef CoMoTk < matlab.mixin.Copyable
                     
                 end
                 
+                cm.dm_dtau( 1, :, b_do_free_time, : ) = 0;
+                cm.dm_dtau( 3, :, b_up_free_time, : ) = 0;
+
             end
             
             % p derivative(s)
@@ -1354,6 +1378,9 @@ classdef CoMoTk < matlab.mixin.Copyable
                     cm.EFn( 3, :, cm.b_n, idx_time ) .* cm.dm_dp( 3, :, cm.b_n, :, : ) + ...
                     cm.dEFn_dp( 3, :, cm.b_n, :, :, idx_time ) .* cm.m( 3, :, cm.b_n );
                 
+                cm.dm_dp( 1, :, b_do_free_time, :, : ) = 0;
+                cm.dm_dp( 3, :, b_up_free_time, :, : ) = 0;
+                                                
             end
             
             % s derivative(s)
@@ -1381,6 +1408,9 @@ classdef CoMoTk < matlab.mixin.Copyable
                     
                 end
                 
+                cm.dm_ds( 1, :, b_do_free_time, :, : ) = 0;
+                cm.dm_ds( 3, :, b_up_free_time, :, : ) = 0;
+                                                
             end
             
             %% finally we update the configuration cm.m
@@ -1398,9 +1428,6 @@ classdef CoMoTk < matlab.mixin.Copyable
                 cm.m( 3, :, cm.idx_do( cm.b_n, idx_time ) ) = ...
                     cm.E( 2, :, idx_time ) .* cm.m( 3, :, cm.b_n );
                 
-                cm.m( 1, :, b_do_free_time ) = 0;
-                cm.m( 3, :, b_up_free_time ) = 0;
-                
             else
                 
                 cm.m( 1, :, cm.idx_up( cm.b_n, idx_time ) ) = ...
@@ -1412,11 +1439,11 @@ classdef CoMoTk < matlab.mixin.Copyable
                 cm.m( 3, :, cm.idx_do( cm.b_n, idx_time ) ) = ...
                     cm.EFn( 3, :, cm.b_n, idx_time ) .* cm.m( 3, :, cm.b_n );
                 
-                cm.m( 1, :, b_do_free_time ) = 0;
-                cm.m( 3, :, b_up_free_time ) = 0;
-                
             end
             
+            cm.m( 1, :, b_do_free_time ) = 0;
+            cm.m( 3, :, b_up_free_time ) = 0;
+                
             % repolarization (here, the relative proton densities come into play)
             
             cm.m( 2, :, cm.null_idx ) = cm.m( 2, :, cm.null_idx ) + cm.w .* ( 1 - cm.E( 1, :, idx_time ) );
@@ -1537,7 +1564,7 @@ classdef CoMoTk < matlab.mixin.Copyable
             % calculate the isochromat
             
             iso.xy = CoMoTk.sqrt_2 .* sum( sum( e_n_osg .* cm.m( 1, :, b_n ), 3 ) );
-            iso.z = sum( sum ( e_n_osg .* cm.m( 2, :, b_n ), 3 ) );  % should be real...
+            iso.z = sum( sum( e_n_osg .* cm.m( 2, :, b_n ), 3 ) );  % should be real...
             
             % and the calculated derivatives
             
@@ -1573,16 +1600,15 @@ classdef CoMoTk < matlab.mixin.Copyable
             
             if ( cm.len_dB1 > 0 )
                 
-                iso.dm_dB1.xy = CoMoTk.sqrt_2 .* sum( sum( e_n_osg .* cm.dm_dB1( 1, :, b_n ), 3 ) );
-                iso.dm_dB1.z = sum( sum( e_n_osg .* cm.dm_dB1( 2, :, b_n ), 3 ) );
+                iso.dm_dB1.xy = CoMoTk.sqrt_2 .* sum( sum( e_n_osg .* cm.dm_dB1( 1, :, b_n ), 3 ), 2 );
+                iso.dm_dB1.z = sum( sum( e_n_osg .* cm.dm_dB1( 2, :, b_n ), 3 ), 2 );
                 
             end
             
             if ( cm.len_dFlipAngle > 0 )
                 
-                iso.dm_dFlipAngle.xy = CoMoTk.sqrt_2 .* ...
-                    sum( sum( e_n_osg .* cm.dm_dFlipAngle( 1, :, b_n, : ), 3 ), 2 );
-                iso.dm_dFlipAngle.z = sum( sum ( e_n_osg .* cm.dm_dFlipAngle( 2, :, b_n, : ), 3 ), 2 );
+                iso.dm_dFlipAngle.xy = CoMoTk.sqrt_2 .* sum( sum( e_n_osg .* cm.dm_dFlipAngle( 1, :, b_n, : ), 3 ), 2 );
+                iso.dm_dFlipAngle.z = sum( sum( e_n_osg .* cm.dm_dFlipAngle( 2, :, b_n, : ), 3 ), 2 );
                 
                 iso.dm_dFlipAngle.xy = reshape( iso.dm_dFlipAngle.xy, [ 1, cm.len_dFlipAngle ] );
                 iso.dm_dFlipAngle.z = reshape( iso.dm_dFlipAngle.z, [ 1, cm.len_dFlipAngle ] );
@@ -1592,17 +1618,27 @@ classdef CoMoTk < matlab.mixin.Copyable
             if ( cm.len_dPhase > 0 )
                 
                 iso.dm_dPhase.xy = CoMoTk.sqrt_2 .* sum( sum( e_n_osg .* cm.dm_dPhase( 1, :, b_n, : ), 3 ), 2 );
-                iso.dm_dPhase.z = sum( sum ( e_n_osg .* cm.dm_dPhase( 2, :, b_n, : ), 3 ), 2 );
+                iso.dm_dPhase.z = sum( sum( e_n_osg .* cm.dm_dPhase( 2, :, b_n, : ), 3 ), 2 );
                 
                 iso.dm_dPhase.xy = reshape( iso.dm_dPhase.xy, [ 1, cm.len_dPhase ] );
                 iso.dm_dPhase.z = reshape( iso.dm_dPhase.z, [ 1, cm.len_dPhase ] );
                 
             end
             
+            if ( cm.len_dtau > 0 )
+                
+                iso.dm_dtau.xy = CoMoTk.sqrt_2 .* sum( sum( e_n_osg .* cm.dm_dtau( 1, :, b_n, : ), 3 ), 2 );
+                iso.dm_dtau.z = sum( sum( e_n_osg .* cm.dm_dtau( 2, :, b_n, : ), 3 ), 2 );
+                
+                iso.dm_dtau.xy = reshape( iso.dm_dtau.xy, [ 1, cm.len_dtau ] );
+                iso.dm_dtau.z = reshape( iso.dm_dtau.z, [ 1, cm.len_dtau ] );
+                
+            end
+            
             if ( cm.len_dp > 0 )
                 
                 iso.dm_dp.xy = CoMoTk.sqrt_2 .* sum( sum( e_n_osg .* cm.dm_dp( 1, :, b_n, :, : ), 3 ), 2 );
-                iso.dm_dp.z = sum( sum ( e_n_osg .* cm.dm_dp( 2, :, b_n, :, : ), 3 ), 2 );
+                iso.dm_dp.z = sum( sum( e_n_osg .* cm.dm_dp( 2, :, b_n, :, : ), 3 ), 2 );
                 
                 iso.dm_dp.xy = reshape( iso.dm_dp.xy, [ 3, cm.len_dp ] );
                 iso.dm_dp.z = reshape( iso.dm_dp.z, [ 3, cm.len_dp ] );
@@ -1612,7 +1648,7 @@ classdef CoMoTk < matlab.mixin.Copyable
             if ( cm.len_ds > 0 )
                 
                 iso.dm_ds.xy = CoMoTk.sqrt_2 .* sum( sum( e_n_osg .* cm.dm_ds( 1, :, b_n, :, : ), 3 ), 2 );
-                iso.dm_ds.z = sum( sum ( e_n_osg .* cm.dm_ds( 2, :, b_n, :, : ), 3 ), 2 );
+                iso.dm_ds.z = sum( sum( e_n_osg .* cm.dm_ds( 2, :, b_n, :, : ), 3 ), 2 );
                 
                 iso.dm_ds.xy = reshape( iso.dm_ds.xy, [ 4, cm.len_ds ] );
                 iso.dm_ds.z = reshape( iso.dm_ds.z, [ 4, cm.len_ds ] );
@@ -1811,20 +1847,28 @@ classdef CoMoTk < matlab.mixin.Copyable
                 
                 cm.b_pz = cm.b_n;
                 
-                if ( cm.len_dp > 0 )
+                %                if ( cm.len_dp > 0 )
                     
-                    tmp = 2 .* reshape( cm.n( b_todo, cm.dp ), [ 1, 1, n_todo, 1, cm.len_dp ] ) .* ...
-                        reshape( cm.p_n( :, b_todo )', [ 1, 1, n_todo, 3 ] );
+                for i = 1 : cm.len_dp
                     
-                    % correct for 0 * Inf == NaN
+                    [ ~, i_ ] = find( cm.dp( i ) == cm.mu );
                     
-                    tmp( isnan( tmp ) ) = 0;
-                    
-                    % due to EFn \equiv 0
-                    
-                    tmp( isinf( tmp ) ) = 0;
-                    
-                    cm.dpz_dp( 1, 1, b_todo, :, : ) = tmp;
+                    if ( ~isempty( i_ ) )
+                        
+                        tmp = 2 .* reshape( cm.n( b_todo, i_ ), [ 1, 1, n_todo ] ) .* ...
+                            reshape( cm.p_n( :, b_todo )', [ 1, 1, n_todo, 3 ] );
+                        
+                        % correct for 0 * Inf == NaN
+                        
+                        tmp( isnan( tmp ) ) = 0;
+                        
+                        % due to EFn \equiv 0
+                        
+                        tmp( isinf( tmp ) ) = 0;
+                        
+                        cm.dpz_dp( 1, 1, b_todo, :, i ) = tmp;
+                        
+                    end
                     
                 end
                 
@@ -1868,27 +1912,31 @@ classdef CoMoTk < matlab.mixin.Copyable
                             tmp( 1, 1, : ) = tmp1 + tmp2;
                             tmp( 2, 1, : ) = tmp1 - tmp2;
                             
-                            if ( cm.len_dp > 0 )
+                            for i = 1 : cm.len_dp
+                    
+                                [ ~, i_ ] = find( cm.dp( i ) == cm.mu );
+                    
+                                if ( ~isempty( i_ ) )
                                 
-                                cm.dpxy_dp( 1, 1, b_todo, :, :, idx_time ) = ...
-                                    reshape( cm.n( b_todo, cm.dp ), [ 1, 1, n_todo, 1, cm.len_dp ] ) .* ...
-                                    reshape( cm.p( :, idx_time ), [ 1, 1, 1, 3 ] );
+                                    cm.dpxy_dp( 1, 1, b_todo, :, i, idx_time ) = ...
+                                        reshape( cm.n( b_todo, i_ ), [ 1, 1, n_todo ] ) .* ...
+                                        reshape( cm.p( :, idx_time ), [ 1, 1, 1, 3 ] );
                                 
-                                [ ~, i ] = find( cm.dp == cm.mu( idx_time ) );
-                                
-                                if ( ~isempty( i ) )
+                                    if ( i_ == idx_time )
                                     
-                                    cm.dpxy_dp( 1, 1, b_todo, :, i, idx_time ) = cm.dpxy_dp( 1, 1, b_todo, :, i, idx_time ) + ...
-                                        reshape( cm.p_n( :, b_todo )', [ 1, 1, n_todo, 3 ] );
+                                        cm.dpxy_dp( 1, 1, b_todo, :, i, idx_time ) = cm.dpxy_dp( 1, 1, b_todo, :, i, idx_time ) + ...
+                                            reshape( cm.p_n( :, b_todo )', [ 1, 1, n_todo, 3 ] );
                                     
-                                    cm.dpxy_dp( 2, 1, b_todo, :, :, idx_time ) = - cm.dpxy_dp( 1, 1, b_todo, :, :, idx_time );
+                                        cm.dpxy_dp( 2, 1, b_todo, :, i, idx_time ) = - cm.dpxy_dp( 1, 1, b_todo, :, i, idx_time );
                                     
-                                    cm.dpxy_dp( :, 1, b_todo, :, i, idx_time ) = cm.dpxy_dp( :, 1, b_todo, :, i, idx_time ) + ...
-                                        reshape( 2 .* cm.p( :, idx_time ) ./ 3, [ 1, 1, 1, 3 ] );
+                                        cm.dpxy_dp( :, 1, b_todo, :, i, idx_time ) = cm.dpxy_dp( :, 1, b_todo, :, i, idx_time ) + ...
+                                            reshape( 2 .* cm.p( :, idx_time ) ./ 3, [ 1, 1, 1, 3 ] );
                                     
-                                else
+                                    else
                                     
-                                    cm.dpxy_dp( 2, 1, b_todo, :, :, idx_time ) = - cm.dpxy_dp( 1, 1, b_todo, :, :, idx_time );
+                                        cm.dpxy_dp( 2, 1, b_todo, :, i, idx_time ) = - cm.dpxy_dp( 1, 1, b_todo, :, i, idx_time );
+                                    
+                                    end
                                     
                                 end
                                 
@@ -1917,13 +1965,19 @@ classdef CoMoTk < matlab.mixin.Copyable
                         tmp( 1, 1, : ) = cm.s( 4, idx_time ) + tmp2;
                         tmp( 2, 1, : ) = cm.s( 4, idx_time ) - tmp2;
                         
-                        if ( cm.len_dp > 0 )
+                        for i = 1 : cm.len_dp
+                    
+                            [ ~, i_ ] = find( cm.dp( i ) == cm.mu );
+                    
+                            if ( ~isempty( i_ ) )
+                                
+                                cm.dpxy_dp( 1, 1, b_todo, :, i, idx_time ) = ...
+                                    reshape( cm.n( b_todo, i_ ), [ 1, 1, n_todo ] ) .* ...
+                                    reshape( cm.s( 1 : 3, idx_time ), [ 1, 1, 1, 3 ] );
                             
-                            cm.dpxy_dp( 1, 1, b_todo, :, :, idx_time ) = ...
-                                reshape( cm.n( b_todo, cm.dp ), [ 1, 1, n_todo, 1, cm.len_dp ] ) .* ...
-                                reshape( cm.s( 1 : 3, idx_time ), [ 1, 1, 1, 3 ] );
-                            
-                            cm.dpxy_dp( 2, 1, b_todo, :, :, idx_time ) = - cm.dpxy_dp( 1, 1, b_todo, :, :, idx_time );
+                                cm.dpxy_dp( 2, 1, b_todo, :, i, idx_time ) = - cm.dpxy_dp( 1, 1, b_todo, :, i, idx_time );
+
+                            end
                             
                         end
                         
@@ -2048,7 +2102,7 @@ classdef CoMoTk < matlab.mixin.Copyable
                     
                     if ( cm.len_dD > 0 )
                         
-                        tmp = zeros( 3, cm.dD, n_todo );
+                        tmp = zeros( 3, cm.len_dD, n_todo );
                         
                         tmp( 1, :, : ) = ...
                             - cm.tau( idx_time ) .* cm.pxy( 1, 1, b_todo, idx_time ) .* cm.EFn( 1, cm.dD, b_todo, idx_time );
@@ -2124,8 +2178,7 @@ classdef CoMoTk < matlab.mixin.Copyable
                     cm.b_EFn( b_todo, idx_time ) = true;
                     
                 end
-                
-                
+                                
             end
             
         end
