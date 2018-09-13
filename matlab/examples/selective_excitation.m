@@ -6,9 +6,9 @@
 %% Tissue: we don't include relaxation or diffusion effects
 % (if needed, just set the tissue parameters accordingly)
 
-R1 = 0;
-R2 = 0;
-D = 0;
+R1 = input( 'R1 [1/ms] = \n' );
+R2 = input( 'R2 [1/ms] = \n' );
+D = input( 'D [um^2/ms] = \n' );
 
 %% RF pulse parameters
 % flip angle (at center of the slice profile)
@@ -107,16 +107,12 @@ x( 3, : ) = linspace( - sl_th_mm, sl_th_mm, n_sl );
 %% initialize configuration model
 
 cm = CoMoTk;
-cm_ideal = CoMoTk;
 
 % mandatory tissue parameters
 
 cm.R1 = R1;
 cm.R2 = R2;
 cm.D = D;
-cm_ideal.R1 = R1;
-cm_ideal.R2 = R2;
-cm_ideal.D = D;
 
 % get default options
 
@@ -133,7 +129,6 @@ cm.options = options;
 % start with longitudinal magnetization
 
 cm.init_configuration ( [ 0; 0; 1 ] );
-cm_ideal.init_configuration ( [ 0; 0; 1 ] );
 
 %% calculate slice selection and rephasing gradient moment
 
@@ -188,8 +183,6 @@ for i = 1 : n_tau
     
 end
 
-cm_ideal.RF( alpha_rad, phase_rad );
-
 %% collect the slice profile at locations x
 % prior to the rephasing gradient, the phase will vary across the slice
 
@@ -233,12 +226,17 @@ end
 
 %% look at the results
 
-subplot( 1, 2, 1 );
+subplot( 1, 3, 1);
+plot( t_rf .* linspace( -0.5, 0.5, n_tau + 1 ), alpha ./ max( alpha ) );
+xlim( [ - 0.5 * t_rf 0.5 * t_rf ] );
+title( 'B^+_1(t)' );
+
+subplot( 1, 3, 2 );
 plot( x( 3, : ), m_iso_rf( 1, : ), x( 3, : ), m_iso_rf( 2, : ), x( 3, : ), m_iso_rf( 3, : ) );
 legend( 'm_x', 'm_y', 'm_z' );
 title( 'after RF pulse' );
 
-subplot( 1, 2, 2 );
+subplot( 1, 3, 3 );
 plot( x( 3, : ), m_iso_refoc( 1, : ), x( 3, : ), m_iso_refoc( 2, : ), x( 3, : ), m_iso_refoc( 3, : ) );
 legend( 'm_x', 'm_y', 'm_z' );
 title( 'after rephasing gradient' );

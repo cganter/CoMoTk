@@ -6,16 +6,16 @@
 
 % Tissue properties
 
-T1 = 1000; %input( 'T1 [ms] = \n' );
-T2 = 100; %input( 'T2 [ms] = \n' );
-D = 0; %input( 'D [um^2/ms] = \n' );
+T1 = input( 'T1 [ms] = \n' );
+T2 = input( 'T2 [ms] = \n' );
+D = input( 'D [um^2/ms] = \n' );
 
 % Sequence and measurement settings
 
-num_echos = 25; %input( 'Number of echos = \n' );
-num_cycles = 1; %input( 'Number of TR cycles = \n' );
+num_echos = input( 'Number of echos = \n' );
+num_cycles = input( 'Number of TR cycles = \n' );
 
-echo_spacing = 10; %input( 'Echo spacing [ms] = \n' );
+echo_spacing = input( 'Echo spacing [ms] = \n' );
 
 % TR (has to be larger than echo train)
 
@@ -29,7 +29,7 @@ end
 
 % to see diffusion effects due to 2 * pi crushers
 
-resolution_mm = 1; %input( 'In plane resolution [mm] = \n' );
+resolution_mm = input( 'In plane resolution [mm] = \n' );
 
 B1 = input( 'B1 = \n' );
 
@@ -39,8 +39,8 @@ B1 = input( 'B1 = \n' );
 
 % nominal flip angle (for B1 == 1 at center of the slice profile)
 
-fa_exc_deg = 90; %input( 'Excitation flip angle [deg] = \n' );
-fa_ref_deg = 180; %input( 'Refocusing flip angle [deg] = \n' );
+fa_exc_deg = input( 'Excitation flip angle [deg] = \n' );
+fa_ref_deg = input( 'Refocusing flip angle [deg] = \n' );
 
 % convert to units, as expected by CoMoTk
 

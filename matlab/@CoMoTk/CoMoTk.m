@@ -1050,9 +1050,9 @@ classdef CoMoTk < matlab.mixin.Copyable
                         cm.b_tau( idx_time ) = true;
                         cm.tau( idx_time ) = varargin{ i + 1 };
                         
-                        if ( cm.tau( idx_time ) <= 0 )
+                        if ( cm.tau( idx_time ) < 0 )
                             
-                            error( 'Time interval must be positive.' );
+                            error( 'Time interval must not be negative.' );
                             
                         end
                         
