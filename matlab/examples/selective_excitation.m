@@ -102,7 +102,7 @@ omega = 0;
 
 n_sl = 501;
 x = zeros( 3, n_sl );
-x( 3, : ) = linspace( - sl_th_mm, sl_th_mm, n_sl );
+x( 3, : ) = linspace( - sl_th_um, sl_th_um, n_sl );
 
 %% initialize configuration model
 
@@ -138,7 +138,7 @@ f = 2 * n_zc / t_rf;
 
 % total moment of slice selection gradient
 
-p_sl = 2 * pi * f * t_rf / sl_th_mm;
+p_sl = 2 * pi * f * t_rf / sl_th_um;
 
 % split into n_tau intervals
 
@@ -163,23 +163,39 @@ for i = 1 : n_tau
 
         % we start with the first small RF pulse
         
-        cm.RF( alpha( i ), phase_rad ); 
+        param = [];
+        param.FlipAngle = alpha( 1 );
+        param.Phase = phase_rad;
+    
+        cm.RF( param );
         
         % in the first time interval, we specify the parameters
         
-        cm.time( mu_rf, 'tau', tau_rf, 'p', p_rf );
+        param = [];
+        param.mu = mu_rf;
+        param.tau = tau_rf;
+        param.p = p_rf;
+        
+        cm.time( param );
     
     else
     
         % in subsequent calls, we only need the handle
         
-        cm.time( mu_rf );
+        param = [];
+        param.mu = mu_rf;
+        
+        cm.time( param );
     
     end
     
     % and the rest of the small pulses
     
-    cm.RF( alpha( i + 1 ), phase_rad );
+    param = [];
+    param.FlipAngle = alpha( i + 1 );
+    param.Phase = phase_rad;
+    
+    cm.RF( param );
     
 end
 
@@ -205,7 +221,12 @@ end
     
 tau_refoc = 1; 
 
-cm.time( mu_refoc, 'tau', tau_refoc, 'p', p_refoc );
+param = [];
+param.mu = mu_refoc;
+param.tau = tau_refoc;
+param.p = p_refoc;
+
+cm.time( param );
 
 %% collect the slice profile at locations x
 % now the phase should be essentially constant across the slice

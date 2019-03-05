@@ -91,6 +91,10 @@ S_ = p_.^2 .* ( tau - t_s - 2 .* delta ./ 3 ) ./ tau;
 
 m_xy = zeros( size( b ) );
 
+% duration of time interval
+
+opt_time.tau = tau;
+    
 %% perform the simulation for each b-value
 
 for i = 1 : length( b )
@@ -129,7 +133,7 @@ for i = 1 : length( b )
 
     % gradient moment
 
-    p = [ p_( i ); 0; 0 ];
+    opt_time.p = [ p_( i ); 0; 0 ];
 
     % excitation pulse
 
@@ -138,9 +142,9 @@ for i = 1 : length( b )
     % first time period
     % gradient shape
 
-    s = [ s_( 1, i ); 0; 0; S_( 1, i ) ];
-
-    cm.time( mu_time, 'tau', tau, 'p', p, 's', s );
+    opt_time.s = [ s_( 1, i ); 0; 0; S_( 1, i ) ];
+    
+    cm.time( mu_time, opt_time );
 
     % refocusing pulse with CPMG condition (not that it would matter here...)
 
@@ -149,9 +153,9 @@ for i = 1 : length( b )
     % second time period
     % gradient shape
 
-    s = [ s_( 2, i ); 0; 0; S_( 2, i ) ];
+    opt_time.s = [ s_( 2, i ); 0; 0; S_( 2, i ) ];
 
-    cm.time( mu_time, 'tau', tau, 'p', p, 's', s );
+    cm.time( mu_time, opt_time );
 
     % read echo signal
 

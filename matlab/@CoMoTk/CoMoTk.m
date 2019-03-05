@@ -9,6 +9,14 @@ classdef CoMoTk < matlab.mixin.Copyable
     %
     % Carl Ganter 2018
     
+    % Diffusion
+                    
+    enumeration
+            
+        No_Diff, Iso_Diff, Tensor_Diff
+        
+    end
+
     properties ( Constant )
         
         % frequently used
@@ -106,6 +114,7 @@ classdef CoMoTk < matlab.mixin.Copyable
         R1_priv = [];
         R2_priv = [];
         D_priv = [];
+        diffusion = CoMoTk.No_Diff;
         
         %% optional tissue properties and measurement conditions
         % cf. dependent counterparts
@@ -133,7 +142,7 @@ classdef CoMoTk < matlab.mixin.Copyable
         % integrals for arbitrary (but otherwise constant) gradient shapes
         % see documentation for the precise definition
         
-        b_s = [];
+        b_shape = [];
         s = [];                                                            % [ 1 / um ]   for s( 1 : 3, : )
         % [ 1 / um^2 ] for s( 4, : )
         
@@ -227,6 +236,9 @@ classdef CoMoTk < matlab.mixin.Copyable
         
         b_dEFn_ds = [];
         dEFn_ds = [];
+        
+        b_dEFn_dS = [];
+        dEFn_dS = [];
         
         % debugging
         
@@ -326,25 +338,36 @@ classdef CoMoTk < matlab.mixin.Copyable
                 
             end
             
-            if ( min( D ) < 0 )
+            sz_D = size( D );
+            
+            if ( length( sz_D ) == 2 )
                 
-                error( 'Diffusion constant must not be negative.' );
+                cm.diffusion = CoMoTk.Iso_Diff;
+                
+            elseif ( length( sz_D ) == 3 )
+            
+                cm.diffusion = CoMoTk.Tensor_Diff;
+
+            else
+                
+                error( 'Invalid diffusion coefficient.' );
                 
             end
-            
+                
             if ( cm.n_tissues == 0 )
                 
-                cm.n_tissues = length( D );
+                cm.n_tissues = sz_D( end );
                 cm.w = ones( 1, cm.n_tissues );
                 cm.dom = zeros( 1, 1, cm.n_tissues );
                 
-            elseif ( length( D ) ~= cm.n_tissues )
+            elseif ( sz_D( end ) ~= cm.n_tissues )
                 
-                error( 'length( D ) must be equal to number of tissues.' );
+                error( 'Supplied D does not match number of tissues.' );
                 
             end
             
-            cm.D_priv = D( : )';                                           % row vector
+%            cm.D_priv = D( : )';                                           % row vector
+            cm.D_priv = D;
             
         end
         
@@ -566,7 +589,7 @@ classdef CoMoTk < matlab.mixin.Copyable
             cm.b_p = false( cm.alloc_d, 1 );
             cm.p = zeros( 3, cm.alloc_d );
             
-            cm.b_s = false( cm.alloc_d, 1 );
+            cm.b_shape = false( cm.alloc_d, 1 );
             cm.s = zeros( 4, cm.alloc_d );
             
             cm.b_tau_n = false( cm.alloc_n, 1 );
@@ -682,7 +705,7 @@ classdef CoMoTk < matlab.mixin.Copyable
         
         %% spin dynamics
         
-        function RF ( cm, FlipAngle, Phase, varargin )
+        function RF ( cm, param )
             % RF  Applies an instantaneous RF pulse
             %
             % IN
@@ -721,9 +744,23 @@ classdef CoMoTk < matlab.mixin.Copyable
                 
             end
             
+            % check for minimal information
+            
+            if ( ~isfield( param, 'FlipAngle' ) )
+                
+                error( 'No flip angle supplied.' );
+                
+            end
+            
+            if ( ~isfield( param, 'Phase' ) )
+                
+                error( 'No phase supplied.' );
+                
+            end
+            
             % this is our actual flip angle
             
-            ActualFlipAngle = cm.B1 * FlipAngle;
+            ActualFlipAngle = cm.B1 * param.FlipAngle;
             
             % no action required, if no rotation is performed
             
@@ -737,37 +774,49 @@ classdef CoMoTk < matlab.mixin.Copyable
             
             handle_FlipAngle = 0;
             handle_Phase = 0;
-            
-            nVarargs = length( varargin );
-            
-            for i = 1 : 2 : nVarargs
                 
-                if ( isequal( varargin{ i }, 'FlipAngle' ) && ...
-                        i < nVarargs && ...
-                        isnumeric( varargin{ i + 1 } ) )
-                    
-                    handle_FlipAngle = varargin{ i + 1 };
-                    
-                elseif ( isequal( varargin{ i }, 'Phase' ) && ...
-                        i < nVarargs && ...
-                        isnumeric( varargin{ i + 1 } ) )
-                    
-                    handle_Phase = varargin{ i + 1 };
-                    
-                else
-                    
-                    error( 'Invalid handle argument.' );
-                    
-                end
+            if ( isfield( param, 'handle_FlipAngle' ) )
+                
+                handle_FlipAngle = param.handle_FlipAngle;
                 
             end
+            
+            if ( isfield( param, 'handle_Phase' ) )
+                
+                handle_Phase = param.handle_Phase;
+                
+            end
+            
+%             nVarargs = length( varargin );
+%             
+%             for i = 1 : 2 : nVarargs
+%                 
+%                 if ( isequal( varargin{ i }, 'FlipAngle' ) && ...
+%                         i < nVarargs && ...
+%                         isnumeric( varargin{ i + 1 } ) )
+%                     
+%                     handle_FlipAngle = varargin{ i + 1 };
+%                     
+%                 elseif ( isequal( varargin{ i }, 'Phase' ) && ...
+%                         i < nVarargs && ...
+%                         isnumeric( varargin{ i + 1 } ) )
+%                     
+%                     handle_Phase = varargin{ i + 1 };
+%                     
+%                 else
+%                     
+%                     error( 'Invalid handle argument.' );
+%                     
+%                 end
+%                 
+%             end
             
             % calculate the rotation matrix
             
             c_al = cos( ActualFlipAngle );
             s_al = sin( ActualFlipAngle );
             
-            ei_ph = cos( Phase ) + 1i * sin( Phase );
+            ei_ph = cos( param.Phase ) + 1i * sin( param.Phase );
             
             RotMat = zeros( 3 );
             
@@ -821,8 +870,8 @@ classdef CoMoTk < matlab.mixin.Copyable
             
             if ( cm.len_dB1 > 0 )
                 
-                dc_al = - s_al * FlipAngle;
-                ds_al = c_al * FlipAngle;
+                dc_al = - s_al * param.FlipAngle;
+                ds_al = c_al * param.FlipAngle;
                 
                 % calculate the rotation matrix
                 
@@ -955,7 +1004,7 @@ classdef CoMoTk < matlab.mixin.Copyable
             
         end
         
-        function b_is_ok = time ( cm, handle_time, varargin )
+        function b_is_ok = time ( cm, param )
             % TIME  time evolution during period T( handle_time ) (without RF pulse)
             %
             % IN
@@ -973,6 +1022,14 @@ classdef CoMoTk < matlab.mixin.Copyable
             
             %% update dimensions and indices
             
+            % check for minimal information
+            
+            if ( ~isfield( param, 'mu' ) )
+                
+                error( 'No ''mu'' supplied.' );
+                
+            end
+                         
             b_is_ok = true;
             
             if ( cm.options.debug && ~cm.check_state( 'before pre_time' ) )
@@ -982,7 +1039,7 @@ classdef CoMoTk < matlab.mixin.Copyable
                 
             end
             
-            [ idx_time, b_n_new, b_up_free_time, b_do_free_time ] = cm.pre_time( handle_time );
+            [ idx_time, b_n_new, b_up_free_time, b_do_free_time ] = cm.pre_time( param.mu );
             
             if ( cm.options.debug && ~cm.check_state( 'after pre_time' ) )
                 
@@ -994,81 +1051,71 @@ classdef CoMoTk < matlab.mixin.Copyable
             %% check optional arguments ( tau, p, s )
             
             b_new_mu = ~cm.b_tau( idx_time );
-            
-            nVarargs = length( varargin );
-            
-            i = 1;
-            
-            while( i <= nVarargs )
+                                   
+            if ( isfield( param, 'p' ) )
                 
-                if ( isequal( varargin{ i }, 'p' ) )
+                if ( b_new_mu )
                     
-                    if ( b_new_mu )
-                        
-                        cm.b_p( idx_time ) = true;
-                        cm.p( :, idx_time ) = varargin{ i + 1 }( : );
-                        
-                    else
-                        
-                        if ( max( abs( cm.p( :, idx_time ) - varargin{ i + 1 }( : ) ) ) > 0 )
-
-                            error( 'Gradient moment p must not change.' );
-                        
-                        end
-                            
-                    end
-                    
-                elseif ( isequal( varargin{ i }, 's' ) )
-                    
-                    % Derivatives with respect to s make only sense for those intervals,
-                    % for which the shape is not variable.
-                    % This is checked by the following statement.
-                    
-                    if ( b_new_mu )
-                        
-                        cm.b_s( idx_time ) = true;
-                        
-                    else
-                        
-                        [ ~, i_ ] = find( cm.ds == handle_time );
-                        
-                        if ( ~isempty( i_ ) && ...
-                              max( abs( cm.s( :, idx_time ) - varargin{ i + 1 }( : ) ) ) > 0 )
-                            
-                          error( 'Derivative of variable shape makes no sense.' );
-                            
-                        end
-                        
-                    end
-                    
-                    cm.s( :, idx_time ) = varargin{ i + 1 }( : );
-                    
-                elseif ( isequal( varargin{ i }, 'tau' ) )
-                    
-                    if ( b_new_mu )
-                        
-                        cm.b_tau( idx_time ) = true;
-                        cm.tau( idx_time ) = varargin{ i + 1 };
-                        
-                        if ( cm.tau( idx_time ) < 0 )
-                            
-                            error( 'Time interval must not be negative.' );
-                            
-                        end
-                        
-                    elseif ( cm.tau( idx_time ) ~= varargin{ i + 1 } )
-                        
-                        error( 'Time interval tau must not change.' );
-                        
-                    end
+                    cm.b_p( idx_time ) = true;
+                    cm.p( :, idx_time ) = param.p;
                     
                 else
                     
-                    error( 'Invalid argument.' );
+                    if ( max( abs( cm.p( :, idx_time ) - param.p( : ) ) ) > 0 )
+                        
+                        error( 'Gradient moment p must not change.' );
+                        
+                    end
                     
                 end
                 
-                i = i + 2;
+            end
+            
+            if ( isfield( param, 's' ) )
+                
+                % Derivatives with respect to s make only sense for those intervals,
+                % for which the shape is not variable.
+                % This is checked by the following statement.
+                
+                if ( b_new_mu )
+                    
+                    cm.b_shape( idx_time ) = true;
+                    
+                else
+                    
+                    [ ~, i_ ] = find( cm.ds == param.mu );
+                    
+                    if ( ~isempty( i_ ) && ...
+                            max( abs( cm.s( :, idx_time ) - param.s( : ) ) ) > 0 )
+                        
+                        error( 'Derivative of variable shape makes no sense.' );
+                        
+                    end
+                    
+                end
+                
+                cm.s( :, idx_time ) = param.s( : );
+                
+            end
+            
+            if ( isfield( param, 'tau' ) )
+                
+                if ( b_new_mu )
+                    
+                    cm.b_tau( idx_time ) = true;
+                    cm.tau( idx_time ) = param.tau;
+                    
+                    if ( cm.tau( idx_time ) < 0 )
+                        
+                        error( 'Time interval must not be negative.' );
+                        
+                    end
+                    
+                elseif ( cm.tau( idx_time ) ~= param.tau )
+                    
+                    error( 'Time interval tau must not change.' );
+                    
+                end
                 
             end
             
@@ -1082,7 +1129,7 @@ classdef CoMoTk < matlab.mixin.Copyable
             
             % rule out a few invalid combinations
             
-            if( cm.b_s( idx_time ) )
+            if( cm.b_shape( idx_time ) )
                 
                 if ( ~cm.b_p( idx_time ) )
                     
@@ -1325,7 +1372,7 @@ classdef CoMoTk < matlab.mixin.Copyable
                     
                 end
                 
-                [ ~, i ] = find( cm.dtau == handle_time );
+                [ ~, i ] = find( cm.dtau == param.mu );
                 
                 if ( ~isempty( i ) )
                     
@@ -1396,7 +1443,7 @@ classdef CoMoTk < matlab.mixin.Copyable
                 cm.dm_ds( 3, :, cm.idx_do( cm.b_n, idx_time ), :, : ) = ...
                     cm.EFn( 3, :, cm.b_n, idx_time ) .* cm.dm_ds( 3, :, cm.b_n, :, : );
                 
-                [ ~, i ] = find( cm.ds == handle_time );
+                [ ~, i ] = find( cm.ds == param.mu );
                 
                 if ( ~isempty( i ) )
                     
@@ -1895,7 +1942,7 @@ classdef CoMoTk < matlab.mixin.Copyable
                 
                 tmp = zeros( 2, 1, n_todo );
                 
-                if ( ~cm.b_s( idx_time ) )
+                if ( ~cm.b_shape( idx_time ) )
                     
                     if ( cm.b_p( idx_time ) )
                         
@@ -2060,7 +2107,7 @@ classdef CoMoTk < matlab.mixin.Copyable
                     ( max( cm.D ) > 0 || ...
                     cm.len_dD > 0 || ...
                     ( sum( cm.b_p ) > 0 && max( abs( cm.p( : ) ) ) == Inf ) || ...
-                    ( sum( cm.b_s ) > 0 && max( abs( cm.s( : ) ) ) == Inf ) ) )
+                    ( sum( cm.b_shape ) > 0 && max( abs( cm.s( : ) ) ) == Inf ) ) )
                 
                 cm.b_EFn = false( cm.alloc_n, cm.alloc_d );
                 cm.EFn = zeros( 3, cm.n_tissues, cm.alloc_n, cm.alloc_d );
@@ -2317,12 +2364,6 @@ classdef CoMoTk < matlab.mixin.Copyable
             
             if ( ~isempty( r ) )
                 
-                if ( cm.options.verbose )
-                    
-%                   fprintf( 1, 'b_up_up_o %d x idx_up\n', length( r ) );
-                    
-                end
-                
                 ind_up = sub2ind( sz_nd, cm.idx_up_new( r ), c ) ;
                 idx_up_other = cm.idx_up( cm.idx_up( b_up_up_o ), idx_time );
                 ind_up_other = sub2ind( sz_nd, idx_up_other, c ) ;
@@ -2339,12 +2380,6 @@ classdef CoMoTk < matlab.mixin.Copyable
             
             if ( ~isempty( r ) )
                 
-                if ( cm.options.verbose )
-                    
-%                    fprintf( 1, 'b_up_do_o %d x idx_do\n', length( r ) );
-                    
-                end
-
                 ind_up = sub2ind( sz_nd, cm.idx_up_new( r ), c ) ;
                 idx_up_other = cm.idx_up( cm.idx_do( b_up_do_o ), idx_time );
                 ind_up_other = sub2ind( sz_nd, idx_up_other, c ) ;
@@ -2361,12 +2396,6 @@ classdef CoMoTk < matlab.mixin.Copyable
             
             if ( ~isempty( r ) )
                 
-                if ( cm.options.verbose )
-                    
-%                    fprintf( 1, 'b_do_up_o %d x idx_up\n', length( r ) );
-                    
-                end
-                
                 ind_do = sub2ind( sz_nd, cm.idx_do_new( r ), c ) ;
                 idx_do_other = cm.idx_do( cm.idx_up( b_do_up_o ), idx_time );
                 ind_do_other = sub2ind( sz_nd, idx_do_other, c ) ;
@@ -2382,13 +2411,7 @@ classdef CoMoTk < matlab.mixin.Copyable
             [ r, c ] = find( b_do_do_o );
             
             if ( ~isempty( r ) )
-                
-                if ( cm.options.verbose )
-                    
-%                    fprintf( 1, 'b_do_do_o %d x idx_do\n', length( r ) );
-                    
-                end
-                
+                                
                 ind_do = sub2ind( sz_nd, cm.idx_do_new( r ), c ) ;
                 idx_do_other = cm.idx_do( cm.idx_do( b_do_do_o ), idx_time );
                 ind_do_other = sub2ind( sz_nd, idx_do_other, c ) ;
@@ -2405,12 +2428,6 @@ classdef CoMoTk < matlab.mixin.Copyable
             
             if ( ~isempty( r ) )
                 
-                if ( cm.options.verbose )
-                    
-%                    fprintf( 1, 'b_up_up_f %d\n', length( r ) );
-                    
-                end
-                
                 cm.b_up_free( sub2ind( sz_nd, cm.idx_up_new( r ), c ) ) = true;
                 
             end
@@ -2418,13 +2435,7 @@ classdef CoMoTk < matlab.mixin.Copyable
             [ r, c ] = find( b_up_do_f );
             
             if ( ~isempty( r ) )
-                
-                if ( cm.options.verbose )
-                    
-%                    fprintf( 1, 'b_up_do_f %d\n', length( r ) );
-                    
-                end
-                
+                                
                 cm.b_do_free( sub2ind( sz_nd, cm.idx_up_new( r ), c ) ) = true;
                 
             end
@@ -2433,12 +2444,6 @@ classdef CoMoTk < matlab.mixin.Copyable
             
             if ( ~isempty( r ) )
                 
-                if ( cm.options.verbose )
-                    
-%                    fprintf( 1, 'b_do_up_f %d\n', length( r ) );
-                    
-                end
-                
                 cm.b_up_free( sub2ind( sz_nd, cm.idx_do_new( r ), c ) ) = true;
                 
             end
@@ -2446,12 +2451,6 @@ classdef CoMoTk < matlab.mixin.Copyable
             [ r, c ] = find( b_do_do_f );
             
             if ( ~isempty( r ) )
-                
-                if ( cm.options.verbose )
-                    
-%                    fprintf( 1, 'b_do_do_f %d\n', length( r ) );
-                    
-                end
                 
                 cm.b_do_free( sub2ind( sz_nd, cm.idx_do_new( r ), c ) ) = true;
                 
@@ -2470,86 +2469,7 @@ classdef CoMoTk < matlab.mixin.Copyable
             cm.b_do_free( cm.idx_do_new( b_do_free_time ), idx_time ) = true;
             cm.b_up_free( cm.idx_do_new( b_do_free_time ), idx_time ) = false;
             
-            %% the following is a bit subtle...
-            
-%             b_up_occ_time = cm.b_n & ~b_up_free_time;
-%             b_do_occ_time = cm.b_n & ~b_do_free_time;
-%             
-%             b_up_free_other = b_other_mu & cm.b_up_free;
-%             b_do_free_other = b_other_mu & cm.b_do_free;
-%             
-%             % first, we look at the cases, for which we can easily determine,
-%             % whether the free neighbor will be occupied
-%             
-%             [ r, c ] = find( b_up_occ_time & b_up_free_other );
-%             ind = sub2ind( sz_nd, r, c );
-%             r_up = cm.idx_up( r, idx_time );
-%             ind_up = sub2ind( sz_nd, r_up, c );
-%             b_tmp = ~cm.b_up_free( ind_up );
-%             
-%             if ( cm.options.verbose )
-%                 
-%                 fprintf( 1, 'up_up: length( r ) = %d, sum( b_tmp ) = %d\n', length( r ), sum( b_tmp ) );
-%                 
-%             end
-%             
-%             cm.b_up_free( ind( b_tmp ) ) = false;
-%             r_new = cm.idx_do_new( cm.idx_up( ind_up( b_tmp) ) );
-%             cm.idx_up( ind( b_tmp) ) = r_new;
-%             cm.idx_do( sub2ind( sz_nd, r_new, c( b_tmp ) ) ) = r( b_tmp );
-%             
-%             [ r, c ] = find( b_up_occ_time & b_do_free_other );
-%             ind = sub2ind( sz_nd, r, c );
-%             r_up = cm.idx_up( r, idx_time );
-%             ind_up = sub2ind( sz_nd, r_up, c );
-%             b_tmp = ~cm.b_do_free( ind_up );
-% 
-%             if ( cm.options.verbose )
-%                 
-%                 fprintf( 1, 'up_do: length( r ) = %d, sum( b_tmp ) = %d\n', length( r ), sum( b_tmp ) );
-%                 
-%             end
-%             
-%             cm.b_do_free( ind( b_tmp ) ) = false;
-%             r_new = cm.idx_do_new( cm.idx_do( ind_up( b_tmp) ) );
-%             cm.idx_do( ind( b_tmp) ) = r_new;
-%             cm.idx_up( sub2ind( sz_nd, r_new, c( b_tmp ) ) ) = r( b_tmp );
-%                         
-%             [ r, c ] = find( b_do_occ_time & b_up_free_other );
-%             ind = sub2ind( sz_nd, r, c );
-%             r_do = cm.idx_do( r, idx_time );
-%             ind_do = sub2ind( sz_nd, r_do, c );
-%             b_tmp = ~cm.b_up_free( ind_do );
-%             
-%             if ( cm.options.verbose )
-%                 
-%                 fprintf( 1, 'do_up: length( r ) = %d, sum( b_tmp ) = %d\n', length( r ), sum( b_tmp ) );
-%                 
-%             end
-%             
-%             cm.b_up_free( ind( b_tmp ) ) = false;
-%             r_new = cm.idx_up_new( cm.idx_up( ind_do( b_tmp) ) );
-%             cm.idx_up( ind( b_tmp) ) = r_new;
-%             cm.idx_do( sub2ind( sz_nd, r_new, c( b_tmp ) ) ) = r( b_tmp );
-%             
-%             [ r, c ] = find( b_do_occ_time & b_do_free_other );
-%             ind = sub2ind( sz_nd, r, c );
-%             r_do = cm.idx_do( r, idx_time );
-%             ind_do = sub2ind( sz_nd, r_do, c );
-%             b_tmp = ~cm.b_do_free( ind_do );
-% 
-%             if ( cm.options.verbose )
-%                 
-%                 fprintf( 1, 'do_do: length( r ) = %d, sum( b_tmp ) = %d\n', length( r ), sum( b_tmp ) );
-%                 
-%             end
-%             
-%             cm.b_do_free( ind( b_tmp ) ) = false;
-%             r_new = cm.idx_up_new( cm.idx_do( ind_do( b_tmp) ) );
-%             cm.idx_do( ind( b_tmp) ) = r_new;
-%             cm.idx_up( sub2ind( sz_nd, r_new, c( b_tmp ) ) ) = r( b_tmp );
-            
-            % now we can update this as well
+            %% now we can update this as well
             
             cm.b_up_free( b_up_free_time, idx_time ) = false;
             cm.b_do_free( b_do_free_time, idx_time ) = false;
@@ -2942,7 +2862,7 @@ classdef CoMoTk < matlab.mixin.Copyable
                     
                     cm.b_tau( b_remove_mu ) = false;
                     cm.b_p( b_remove_mu ) = false;
-                    cm.b_s( b_remove_mu ) = false;
+                    cm.b_shape( b_remove_mu ) = false;
                     
                     cm.b_E( b_remove_mu ) = false;
                     
@@ -3130,7 +3050,7 @@ classdef CoMoTk < matlab.mixin.Copyable
                 cm.b_p( rng_d ) = false;
                 cm.p( :, rng_d ) = 0;
                 
-                cm.b_s( rng_d ) = false;
+                cm.b_shape( rng_d ) = false;
                 cm.s( :, rng_d ) = 0;
                 
                 cm.b_E( rng_d ) = false;

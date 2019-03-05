@@ -158,7 +158,9 @@ for i = 1 : n
     
     % precession, relaxation and repolarization
  
-    if ( ~cm.time( i_tau( i ), 'tau', tau( i_tau( i ) ) ) )
+    opt_time.tau = tau( i_tau( i ) );
+    
+    if ( ~cm.time( i_tau( i ), opt_time ) )
         
         break;
         

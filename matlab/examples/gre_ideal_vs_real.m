@@ -347,15 +347,27 @@ for i = 1 : num_TR
     % otherwise b_n cannot bet set for i == 1 below
     % since the initial state is in equilibrium for i == 1, the magnetization is not changed
         
-    cm_SSFP_ideal.time( mu_SSFP_ideal_post, 'tau', tau_SSFP_ideal_post );
+    param = [];
+    param.mu = mu_SSFP_ideal_post;
+    param.tau = tau_SSFP_ideal_post;
+    
+    cm_SSFP_ideal.time( param );
         
     % excitation pulse
     
-    cm_SSFP_ideal.RF( fa_rad, ph_rad( i ) );
+    param = [];
+    param.FlipAngle = fa_rad;
+    param.Phase = ph_rad( i );
+
+    cm_SSFP_ideal.RF( param );
         
     % time to echo
         
-    cm_SSFP_ideal.time( mu_SSFP_ideal_pre, 'tau', tau_SSFP_ideal_pre );
+    param = [];
+    param.mu = mu_SSFP_ideal_pre;
+    param.tau = tau_SSFP_ideal_pre;
+
+    cm_SSFP_ideal.time( param );
     
     % SSFP  : only the zero order configuration (= FID) contributes to the voxel signal,
     %         (assuming a crusher was present after the echo - even, if not simulated)
@@ -374,15 +386,27 @@ for i = 1 : num_TR
     
     % time after echo
     
-    cm_bSSFP_ideal.time( mu_bSSFP_ideal, 'tau', tau_bSSFP_ideal );
+    param = [];
+    param.mu = mu_bSSFP_ideal;
+    param.tau = tau_bSSFP_ideal;
+
+    cm_bSSFP_ideal.time( param );
     
     % excitation pulse
     
-    cm_bSSFP_ideal.RF( fa_rad, ph_rad( i ) );
+    param = [];
+    param.FlipAngle = fa_rad;
+    param.Phase = ph_rad( i );
+
+    cm_bSSFP_ideal.RF( param );
     
     % time to echo
         
-    cm_bSSFP_ideal.time( mu_bSSFP_ideal, 'tau', tau_bSSFP_ideal );
+    param = [];
+    param.mu = mu_bSSFP_ideal;
+    param.tau = tau_bSSFP_ideal;
+    
+    cm_bSSFP_ideal.time( param );
 
     % bSSFP : all configurations contribute to the voxel signal
     
@@ -398,27 +422,50 @@ for i = 1 : num_TR
     
     % time after echo
     
-    cm_SSFP_real.time( mu_SSFP_real_post, 'tau', tau_SSFP_real_post, 'p', p_SSFP_real_post );
+    param = [];
+    param.mu = mu_SSFP_real_post;
+    param.tau = tau_SSFP_real_post;
+    param.p = p_SSFP_real_post;
+
+    cm_SSFP_real.time( param );
     
     % excitation pulse
 
     % first small pulse
     
-    cm_SSFP_real.RF( al_rad( 1 ), ph_rad( i ) );     
+    param = [];
+    param.FlipAngle = al_rad( 1 );
+    param.Phase = ph_rad( i );
+    
+    cm_SSFP_real.RF( param );     
     
     for j = 1 : n_tau
 
-        cm_SSFP_real.time( mu_real_rf, 'tau', tau_real_rf, 'p', p_real_rf );
+        param = [];
+        param.mu = mu_real_rf;
+        param.tau = tau_real_rf;
+        param.p = p_real_rf;
+
+        cm_SSFP_real.time( param );
             
         % and the rest of the small pulses
+                
+        param = [];
+        param.FlipAngle = al_rad( j + 1 );
+        param.Phase = ph_rad( i );
         
-        cm_SSFP_real.RF( al_rad( j + 1 ), ph_rad( i ) );     
+        cm_SSFP_real.RF( param );
         
     end
 
     % time to echo
         
-    cm_SSFP_real.time( mu_SSFP_real_pre, 'tau', tau_SSFP_real_pre, 'p', p_SSFP_real_pre );
+    param = [];
+    param.mu = mu_SSFP_real_pre;
+    param.tau = tau_SSFP_real_pre;
+    param.p = p_SSFP_real_pre;
+    
+    cm_SSFP_real.time( param );
     
     % SSFP  : only the zero order configuration (= FID) contributes to the voxel signal,
     %         (assuming a crusher was present after the echo - even, if not simulated)
@@ -441,27 +488,50 @@ for i = 1 : num_TR
     
     % time after echo
     
-    cm_bSSFP_real.time( mu_bSSFP_real, 'tau', tau_bSSFP_real, 'p', p_bSSFP_real );
+    param = [];
+    param.mu = mu_bSSFP_real;
+    param.tau = tau_bSSFP_real;
+    param.p = p_bSSFP_real;
+        
+    cm_bSSFP_real.time( param );
     
     % excitation pulse
 
     % first small pulse
     
-    cm_bSSFP_real.RF( al_rad( 1 ), ph_rad( i ) );     
+    param = [];
+    param.FlipAngle = al_rad( 1 );
+    param.Phase = ph_rad( i );
+        
+    cm_bSSFP_real.RF( param );     
     
     for j = 1 : n_tau
 
-        cm_bSSFP_real.time( mu_real_rf, 'tau', tau_real_rf, 'p', p_real_rf );
+        param = [];
+        param.mu = mu_real_rf;
+        param.tau = tau_real_rf;
+        param.p = p_real_rf;
+                
+        cm_bSSFP_real.time( param );
             
         % and the rest of the small pulses
         
-        cm_bSSFP_real.RF( al_rad( j + 1 ), ph_rad( i ) );     
+        param = [];
+        param.FlipAngle = al_rad( j + 1 );
+        param.Phase = ph_rad( i );
+                
+        cm_bSSFP_real.RF( param );     
         
     end
 
     % time to echo
         
-    cm_bSSFP_real.time( mu_bSSFP_real, 'tau', tau_bSSFP_real, 'p', p_bSSFP_real );
+    param = [];
+    param.mu = mu_bSSFP_real;
+    param.tau = tau_bSSFP_real;
+    param.p = p_bSSFP_real;
+    
+    cm_bSSFP_real.time( param );
     
     % bSSFP : only the slice encoding direction requires a zero gradient moment
     

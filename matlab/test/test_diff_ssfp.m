@@ -85,13 +85,20 @@ s = [ p_scalar; 0; 0; p_scalar^2 / 3 ];
 
 %% approach steady state
 
+opt_impl.tau = TR;
+opt_impl.p = p;
+
+opt_expl.tau = TR;
+opt_expl.p = p;
+opt_expl.s = s;
+
 for i = 1 : num_TR
 
     % time interval -/+ providing the gradient shape explicitly
     % (implicitly, a constant gradient is assumed - so the result should be the same)
-        
-    cm_impl.time( mu_time, 'tau', TR, 'p', p );
-    cm_expl.time( mu_time, 'tau', TR, 'p', p, 's', s );
+                
+    cm_impl.time( mu_time, opt_impl );
+    cm_expl.time( mu_time, opt_expl );
 
     % excitation pulse
     

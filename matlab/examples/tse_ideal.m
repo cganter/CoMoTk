@@ -129,25 +129,47 @@ for i = 1 : num_cycles
 
     % excitation pulse
     
-    cm_cpmg.RF( fa_exc_rad, 0 );
-    cm_no_cpmg.RF( fa_exc_rad, 0 );
+    param = [];
+    param.FlipAngle = fa_exc_rad;
+    param.Phase = 0;
+    
+    cm_cpmg.RF( param );
+    cm_no_cpmg.RF( param );
 
     for j = 1 : num_echos       
         
         % time to refucusing pulse
         
-        cm_cpmg.time( mu_te, 'tau', tau_te, 'p', p_te );
-        cm_no_cpmg.time( mu_te, 'tau', tau_te, 'p', p_te );
+        param = [];
+        param.mu = mu_te;
+        param.tau = tau_te;
+        param.p = p_te;
+        
+        cm_cpmg.time( param );
+        cm_no_cpmg.time( param );
         
         % refocusing pulse
         
-        cm_cpmg.RF( fa_ref_rad, 0.5 * pi );
-        cm_no_cpmg.RF( fa_ref_rad, 0 );
+        
+        param = [];
+        param.FlipAngle = fa_ref_rad;
+        param.Phase = 0.5 * pi;
+        
+        cm_cpmg.RF( param );
+
+        param.Phase = 0;
+
+        cm_no_cpmg.RF( param );
         
         % time to echo
         
-        cm_cpmg.time( mu_te, 'tau', tau_te, 'p', p_te );
-        cm_no_cpmg.time( mu_te, 'tau', tau_te, 'p', p_te );
+        param = [];
+        param.mu = mu_te;
+        param.tau = tau_te;
+        param.p = p_te;
+
+        cm_cpmg.time( param );
+        cm_no_cpmg.time( param );
     
         % select the correct configuration:
         % only the zero order configuration along the crusher direction contributes to the voxel signal
@@ -180,8 +202,13 @@ for i = 1 : num_cycles
 
         % time to next excitation pulse
                 
-        cm_cpmg.time( mu_tr, 'tau', tau_tr, 'p', p_tr );
-        cm_no_cpmg.time( mu_tr, 'tau', tau_tr, 'p', p_tr );
+        param = [];
+        param.mu = mu_tr;
+        param.tau = tau_tr;
+        param.p = p_tr;
+                
+        cm_cpmg.time( param);
+        cm_no_cpmg.time( param );
     
     end
         

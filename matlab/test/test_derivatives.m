@@ -354,20 +354,24 @@ for i_d = 1 : length( der_str )
                         
             % RF pulse
                         
-            cm.RF( alpha( idx_alpha( i_n ) ), phase( idx_phase( i_n ) ) , 'FlipAngle', idx_alpha( i_n ) , 'Phase', idx_phase( i_n ) );
+            opt_RF.handle_FlipAngle = idx_alpha( i_n );
+            opt_RF.handle_Phase = idx_phase( i_n );
+            
+            cm.RF( alpha( idx_alpha( i_n ) ), phase( idx_phase( i_n ) ) , opt_RF );
             
             % time interval
 
+            opt_time.tau = tau( idx_tau( i_n ) );
+            opt_time.p = p( :, idx_tau( i_n ) );
+            
             if ( b_diff && b_shape )
             
-                cm.time( idx_tau( i_n ), 'tau', tau( idx_tau( i_n ) ), 'p', p( :, idx_tau( i_n ) ) , 's', s( :, idx_tau( i_n ) ) );
-                
-            else
-                
-                cm.time( idx_tau( i_n ), 'tau', tau( idx_tau( i_n ) ), 'p', p( :, idx_tau( i_n ) ) );
+                opt_time.s = s( :, idx_tau( i_n ) );
                 
             end
                        
+            cm.time( idx_tau( i_n ), opt_time );
+
         end
 
         if ( b_iso )
