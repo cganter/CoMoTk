@@ -7,327 +7,317 @@
 
 % test is based on individual configurations or isochromats
 
-b_iso = [];
+par = [];
+opt = [];
+str = [];
 
-while( isempty( b_iso ) )
+par.derivative = 'R1';
+par.check = 'isochromats';
+par.tissues = 3;
+par.diffusion = 'none';
+par.coupling = 'none';
+par.shape = 'implicit';
+par.train = 50;
+par.d = 2;
+par.n_fa = 3;
+par.n_ph = 3;
+
+opt.derivative = { 'R1', 'R2', 'D', 'B1', 'FlipAngle', 'Phase', 'tau', 'p', 's', 'S' };
+opt.check = { 'configurations', 'isochromats' };
+opt.tissues = [];
+opt.diffusion = { 'none', 'isotropic', 'tensor' };
+opt.coupling = { 'none', 'magnetization transfer', 'J-coupling' };
+opt.shape = { 'implicit', 'explicit' };
+opt.train = [];
+opt.d = [];
+opt.n_fa = [];
+opt.n_ph = [];
+
+str.derivative = 'variable parameter';
+str.check = 'which output to check';
+str.tissues = 'number of tissues';
+str.diffusion = 'how to include diffusion effects';
+str.coupling = 'magnetization transfer/exchange, J-coupling';
+str.shape = 'gradient shape';
+str.train = 'number of intervals, after which the derivatives are checked';
+str.d = 'dimension of configuration model == number of different intervals (< train)';
+str.n_fa = 'number of different flip angles (< train)';
+str.n_ph = 'number of different phases (< train)';
+
+% typical scale of parameters
+
+scale = struct( ...
+    'R1', 1e-2, ...
+    'R2', 1e-1, ...
+    'D', 1, ...
+    'B1', 1, ...
+    'FlipAngle', pi, ...
+    'Phase', 2 * pi, ...
+    'tau', 1, ...
+    'p', 1e-2, ...
+    's', 1, ...
+    'S', 1e-2 ...
+    );
+
+% parameter degrees of freedom
+
+deg = struct( ...
+    'R1', 1, ...
+    'R2', 1, ...
+    'D', 1, ...
+    'B1', 1, ...
+    'FlipAngle', 1, ...
+    'Phase', 1, ...
+    'tau', 1, ...
+    'p', 3, ...
+    's', 3, ...
+    'S', 1 ...
+    );
+
+% logarithmic spacing over three decades (1e-5 ... 1e-2)
+
+x = 1e-5 * ( 1e3.^( 0 : 0.1 : 1 ) );
+n_x = length( x );
     
-    a_ = input( 'Check with configurations (1) or isochromats (2)?\n' );
+while ( true )
+    
+    [ par, sel ] = set_field_values( par, opt, str );
+    
+    if ( sel == -1 )
+        
+        break;
+        
+    end
 
-    if ( a_ == 1 )
+    % rule out invalid combinations
+    
+    if ( isequal( par.diffusion, 'none' ) && ...
+        ( isequal( par.derivative, 'p' ) || isequal( par.derivative, 's' ) || isequal( par.derivative, 'S' ) || isequal( par.shape, 'explicit' ) ) )
         
-        b_iso = false;
-        
-        fprintf( 1, 'Check with configurations\n' );
-        
-    elseif ( a_ == 2 )
-        
-        b_iso = true;
-        
-        fprintf( 1, 'Check with isochromats\n' );
-        
-    else
-        
-        fprintf( '1 or 2 expected.\' );
+        fprintf( 1, 'Gradient moment irrelevant without diffusion.\n\n' );
+        continue;
         
     end
     
-end
-
-% test should be run +/- diffusion effects
-
-b_diff = [];
-
-while( isempty( b_diff ) )
-    
-    a_ = input( 'Calculate with diffusion? (1 == yes, 2 == no)\n' );
-
-    if ( a_ == 1 )
+    if ( isequal( par.diffusion, 'none' ) && isequal( par.derivative, 'D' ) )
         
-        b_diff = true;
-        
-        fprintf( 1, 'Check derivatives with diffusion effects\n' );
-        
-    elseif ( a_ == 2 )
-        
-        b_diff = false;
-        
-        fprintf( 1, 'Check derivatives without diffusion effects\n' );
-        
-    else
-        
-        fprintf( '1 or 2 expected.\' );
+        fprintf( 1, 'Diffusion derivative requires diffusion...\n\n' );
+        continue;
         
     end
     
-end
-
-% in case of diffusion, the shape can be specified explicitly or not
-% (the latter case assumes a constant gradient in every time period)
-
-if ( b_diff )
+    if ( ( isequal( par.derivative, 'p' ) || isequal( par.derivative, 's' ) || isequal( par.derivative, 'S' ) ) && isequal( par.shape, 'implicit' ) )
     
-    b_shape = [];
+        fprintf( 1, 'Derivative with respect to shape requires the latter to be explicit.\n' );
+        fprintf( 1, 'This also includes derivatives with respect to p.\n\n' );
+        continue;
+        
+    end
+
+    if ( ~isequal( par.coupling, 'none' ) )
     
-    while( isempty( b_shape ) )
+        fprintf( 1, 'Spin coupling not implemented yet.\n' );
+        continue;
         
-        a_ = input( 'Calculate with explicit shape? (1 == yes, 2 == no)\n' );
+    end
+
+    % set all sequence parameters
+    
+    var_.R1 = scale.R1 .* ( 0.5 + rand( 1, par.tissues ) );
+    var_.R2 = scale.R2 .* ( 0.5 + rand( 1, par.tissues ) );
+    
+    if ( isequal( par.diffusion, 'isotropic' ) )
         
-        if ( a_ == 1 )
+        var_.D = scale.D .* ( 0.5 + rand( 1, par.tissues ) );
+        deg.D = 1;
+        
+    elseif ( isequal( par.diffusion, 'tensor' ) )
+        
+        var_.D = zeros( 3, 3, par.tissues );
+        
+        for i = 1 : par.tissues
             
-            b_shape = true;
+            sqrt_D = randn( 3 );
+            var_.D( :, :, i ) = sqrt_D * sqrt_D';
+            var_.D( :, :, i ) = ( 3 * scale.D / trace( var_.D( :, :, i ) ) ) .* var_.D( :, :, i );
+
+            deg.D = 6;
             
-            fprintf( 1, 'Variable gradient shape\n' );
+        end
+        
+    elseif ( isequal( par.diffusion, 'none' ) )
+        
+        var_.D = zeros( 1, par.tissues );
+
+        deg.D = 1;
+        
+    end
+
+    var_.B1 = 1;
+
+    var_.FlipAngle = scale.FlipAngle .* rand( 1, par.n_fa );
+    var_.Phase = scale.Phase .* rand( 1, par.n_ph );
+    var_.tau = scale.tau .* ( 0.5 + rand( 1, par.d ) );
+    var_.p = scale.p .* randn( 3, par.d );
+    
+    if ( isequal( par.shape, 'explicit' ) )
+        
+        var_.s = scale.s .* randn( 3, par.d );
+        
+        if ( isequal( par.diffusion, 'isotropic' ) )
             
-        elseif ( a_ == 2 )
+            var_.S = scale.S .* ( 0.5 + rand( 1, par.d ) );
             
-            b_shape = false;
+            deg.S = 1;
             
-            fprintf( 1, 'Constant gradient\n' );
+        elseif ( isequal( par.diffusion, 'tensor' ) )
             
-        else
+            var_.S = zeros( 3, 3, par.d );
             
-            fprintf( '1 or 2 expected.\' );
+            for i = 1 : par.d
+                
+                sqrt_S = randn( 3 );
+                var_.S( :, :, i ) = sqrt_S * sqrt_S';
+                var_.S( :, :, i ) = ( 3 * scale.S / trace( var_.S( :, :, i ) ) ) .* var_.S( :, :, i );
+
+                deg.S = 6;
+                
+            end
+
+        end
+            
+    end
+
+    % define the variable increment
+    
+    if ( ismember( par.derivative, { 'R1', 'R2', 'B1', 'FlipAngle', 'Phase', 'tau' } ) )
+        
+        dx = scale.( par.derivative );
+        dx_vec = dx;
+        
+    elseif ( ismember( par.derivative, { 'p', 's' } ) )
+        
+        dx = scale.( par.derivative ) .* randn( 3, 1 );
+        dx_vec = dx;
+        
+    elseif ( ismember( par.derivative, { 'D', 'S' } ) )
+        
+        if ( isequal( par.diffusion, 'isotropic' ) )
+            
+            dx = scale.( par.derivative );
+            dx_vec = dx;
+            
+        elseif ( isequal( par.diffusion, 'tensor' ) )
+
+            sqrt_dx = randn( 3 );
+            dx = sqrt_dx * sqrt_dx';
+            dx = ( 3 * scale.( par.derivative ) / trace( dx ) ) .* dx;
+            dx_vec = [ dx( 1, 1 ); dx( 2, 2 ); dx( 3, 3 ); dx( 1, 2 ); dx( 1, 3 ); dx( 2, 3 ) ];
             
         end
         
     end
+            
+    % randomized sequence of RF pulses and time intervals
+    
+    idx.fa = randi( par.n_fa, 1, par.train );
+    idx.ph = randi( par.n_ph, 1, par.train );
+    idx.tau = randi( par.d, 1, par.train );
+    
+    % randomly select derivatives to calculate
         
-end
-
-% dimensions
-
-d = 2;    % instantaneous RF pulses and two different time intervals
-n_t = 3;  % number of tissues
-n_al = 3; % number of different flip angles
-n_ph = 3; % number of different phases
-
-% typical scale of parameters
-
-R1_scale = 1e-3;
-R2_scale = 1e-2;
-D_scale = 1;
-B1_scale = 1;
-FlipAngle_scale = pi;
-Phase_scale = 2 * pi;
-tau_scale = 1;
-p_scale = [ 1e-2; 1e-2; 1e-2 ];
-s_scale = [ 1e-2; 1e-2; 1e-2; 1e-4 ];
-
-% logarithmic spacing over three decades
-
-x = 1e-5 * ( 1000.^( 0 : 0.1 : 1 ) );
-
-n_x = length( x );
-
-% number of intervals, after which we check the derivatives
-
-n = 50;
-
-% random settings
-
-idx_alpha = ceil( n_al .* rand( 1, n ) );
-idx_phase = ceil( n_ph .* rand( 1, n ) );
-idx_tau = ceil( d .* rand( 1, n ) );
-
-% randomly define a subset of derivatives to calculate
-
-idx_ = randperm( n_t );
-idx_dR1 = idx_( 1 : 2 );
-
-idx_ = randperm( n_t );
-idx_dR2 = idx_( 1 : 2 );
-
-idx_ = randperm( n_t );
-idx_dD = idx_( 1 : 2 );
-
-idx_ = randperm( n_al );
-idx_dFlipAngle = idx_( 1 : 2 );
-
-idx_ = randperm( n_ph );
-idx_dPhase = idx_( 1 : 2 );
-
-idx_ = randperm( d );
-idx_dtau = idx_( 1 : 2 );
-
-idx_ = randperm( d );
-idx_dp = idx_( 1 : 2 );
-
-idx_ = randperm( d );
-idx_ds = idx_( 1 : 2 );
-
-% derivative strings
-
-if ( b_diff )
-
-    if ( b_shape )
+    if ( par.tissues > 1 && ismember( par.derivative, { 'R1', 'R2', 'D' } ) )
         
-        der_str = { 'R1', 'R2', 'D', 'B1', 'FlipAngle', 'Phase', 'tau', 'p', 's' };
-
+        idx.der = randperm( par.tissues );
+        idx.der = idx.der( 1 : 2 );
+        
+    elseif ( par.d > 1 && ismember( par.derivative, { 'tau', 'p', 's', 'S' } ) )
+        
+        idx.der = randperm( par.d );
+        idx.der = idx.der( 1 : 2 );
+                
+    elseif ( par.n_fa > 1 && isequal( par.derivative, { 'FlipAngle' } ) )
+        
+        idx.der = randperm( par.n_fa );
+        idx.der = idx.der( 1 : 2 );
+                
+    elseif ( par.n_ph > 1 && isequal( par.derivative, { 'Phase' } ) )
+        
+        idx.der = randperm( par.n_ph );
+        idx.der = idx.der( 1 : 2 );
+                
     else
         
-        der_str = { 'R1', 'R2', 'D', 'B1', 'FlipAngle', 'Phase', 'tau', 'p' };
+        idx.der = 1;
+        
+    end
+    
+    disp( idx.der );
+    
+    % balanced sequences are most sensitive on the pure shape S
+
+    if ( isequal( par.derivative, 'S' ) )
+        
+        var_.p( : ) = 0;
         
     end
         
-else
-
-    der_str = { 'R1', 'R2', 'B1', 'FlipAngle', 'Phase', 'tau' };
-
-end
-
-% do tests
-
-for i_d = 1 : length( der_str )
+    % do tests
     
-    fprintf( 1, 'Check derivative with respect to %s.\n', der_str{ i_d } );
-       
-    % set various parameters
-    
-    R1 = R1_scale .* ( 1 + rand( 1, n_t ) );
-    R2 = R2_scale .* ( 1 + rand( 1, n_t ) );
-    
-    if ( b_diff )
+    fprintf( 1, 'Check derivative with respect to %s.\n', par.derivative );
         
-        D = D_scale .* ( 1 + rand( 1, n_t ) );
-        
-    else
-        
-        D = zeros( 1, n_t );
-        
-    end
-  
-    B1 = 1;
-    alpha_0 = FlipAngle_scale .* rand( 1, n_al );
-    phase_0 = Phase_scale .* rand( 1, n_ph );
-    tau_0 = tau_scale .* ( 1 + rand( 1, d ) );
-    p_0 = p_scale .* randn( 3, d );
-    s_0 = s_scale .* randn( 4, d );
-    
-    % random gradient orientations
-    
-    e3 = randn( 3, 1 );
-    e3 = e3 ./ sqrt( e3' * e3 );
-    dp = p_scale .* e3;
-    
-    e4 = randn( 4, 1 );
-    e4 = e4 ./ sqrt( e4' * e4 );
-    ds = s_scale .* e4;
-    
     rel_diff = zeros( 1, n_x );
-
-    if ( isequal( der_str{ i_d }, 'R1' ) )
-        
-        idx_d = idx_dR1;
-        
-    elseif ( isequal( der_str{ i_d }, 'R2' ) )
-        
-        idx_d = idx_dR2;
-        
-    elseif ( isequal( der_str{ i_d }, 'D' ) )
-        
-        idx_d = idx_dD;
-        
-    elseif ( isequal( der_str{ i_d }, 'B1' ) )
-        
-        idx_d = 1;
-        
-    elseif ( isequal( der_str{ i_d }, 'FlipAngle' ) )
-        
-        idx_d = idx_dFlipAngle;
-        
-    elseif ( isequal( der_str{ i_d }, 'Phase' ) )
-        
-        idx_d = idx_dPhase;
-        
-    elseif ( isequal( der_str{ i_d }, 'tau' ) )
-        
-        idx_d = idx_dtau;
-        
-    elseif ( isequal( der_str{ i_d }, 'p' ) )
-        
-        idx_d = idx_dp;
-        
-    elseif ( isequal( der_str{ i_d }, 's' ) )
-        
-        idx_d = idx_ds;
-        
-    else
-        
-        error( 'Unknown parameter.' );
-        
-    end
-
+    var = var_;
+    
+    % calculate the for various arguments
+    
     for i_x = 0 : n_x
         
         fprintf( 1, '%d / %d\n', i_x, n_x );
         
-        % initialize configuration model
-        
-        cm = CoMoTk;
-        
-        % parameters
-        
-        cm.R1 = R1;
-        cm.R2 = R2;
-        cm.D = D;
-        cm.B1 = B1;
-
-        alpha = alpha_0;
-        phase = phase_0;
-        tau = tau_0;
-        p = p_0;
-        s = s_0;
-        
-        % increment on the variable
-        
+        % set variable parameter
+   
         if ( i_x > 0 )
             
-            if ( isequal( der_str{ i_d }, 'R1' ) )
+            if ( ismember( par.derivative, { 'R1', 'R2', 'B1', 'FlipAngle', 'Phase', 'tau' } ) )
                 
-                cm.R1( idx_dR1( 1 ) ) = R1( idx_dR1( 1 ) ) + x( i_x ) * R1_scale;
+                var.( par.derivative )( idx.der( 1 ) ) = var_.( par.derivative )( idx.der( 1 ) ) + x( i_x ) * dx;
+
+            elseif ( ismember( par.derivative, { 'p', 's' } ) )
                 
-            elseif ( isequal( der_str{ i_d }, 'R2' ) )
+                var.( par.derivative )( :, idx.der( 1 ) ) = var_.( par.derivative )( :, idx.der( 1 ) ) + x( i_x ) * dx;
                 
-                cm.R2( idx_dR2( 1 ) ) = R2( idx_dR2( 1 ) ) + x( i_x ) * R2_scale;
+            elseif ( ismember( par.derivative, { 'D', 'S' } ) )
                 
-            elseif ( isequal( der_str{ i_d }, 'D' ) )
+                if ( isequal( par.diffusion, 'isotropic' ) )
+                    
+                    var.( par.derivative )( idx.der( 1 ) ) = var_.( par.derivative )( idx.der( 1 ) ) + x( i_x ) * dx;
+
+                elseif ( isequal( par.diffusion, 'tensor' ) )
+                    
+                    var.( par.derivative )( :, :, idx.der( 1 ) ) = var_.( par.derivative )( :, :, idx.der( 1 ) ) + x( i_x ) * dx;
+
+                end
                 
-                cm.D( idx_dD( 1 ) ) = D( idx_dD( 1 ) ) + x( i_x ) * D_scale;
-                
-            elseif ( isequal( der_str{ i_d }, 'B1' ) )
-                
-                cm.B1 = B1 + x( i_x ) * B1_scale;
-                
-            elseif ( isequal( der_str{ i_d }, 'FlipAngle' ) )
-                
-                alpha( idx_dFlipAngle( 1 ) ) = alpha_0( idx_dFlipAngle( 1 ) ) + x( i_x ) * FlipAngle_scale;
-                
-            elseif ( isequal( der_str{ i_d }, 'Phase' ) )
-                
-                phase( idx_dPhase( 1 ) ) = phase_0( idx_dPhase( 1 ) ) + x( i_x ) * Phase_scale;
-                
-            elseif ( isequal( der_str{ i_d }, 'tau' ) )
-                
-                tau( idx_dtau( 1 ) ) = tau_0( idx_dtau( 1 ) ) + x( i_x ) * tau_scale;
-                
-            elseif ( isequal( der_str{ i_d }, 'p' ) )
-                
-                p( :, idx_dp( 1 ) ) = p_0( :, idx_dp( 1 ) ) + x( i_x ) * dp;
-                
-            elseif ( isequal( der_str{ i_d }, 's' ) )
-                
-                s( :, idx_ds( 1 ) ) = s_0( :, idx_ds( 1 ) ) + x( i_x ) * ds;
-                               
             end
             
         end
+        
+        % initialize configuration model
+                        
+        cm = CoMoTk;
+
+        cm.R1 = var.R1;
+        cm.R2 = var.R2;
+        cm.D = var.D;
+        cm.B1 = var.B1;
         
         % get default options
         
         options = cm.options;
         
         options.alloc_n = 5000;
-        options.alloc_d = d;
+        options.alloc_d = par.d;
         options.epsilon = 0;
         
         % set new options
@@ -336,235 +326,110 @@ for i_d = 1 : length( der_str )
         
         % initialize everything
         
-        cm.init_configuration ( [ zeros( 1, n_t ); zeros( 1, n_t ); ones( 1, n_t ) ] );
+        cm.init_configuration ( [ zeros( 1, par.tissues ); zeros( 1, par.tissues ); ones( 1, par.tissues ) ] );
         
-        % specify derivatives to calulate
-
-        if ( ~isequal( der_str{ i_d }, 'B1' ) )
+        % specify derivatives to calculate
         
-            cm.set_derivatives ( der_str{ i_d }, idx_d );
-            
-        else
-            
-            cm.set_derivatives ( der_str{ i_d } );
+        param = [];
+        param.( par.derivative ) = idx.der;
 
-        end
-                    
-        for i_n = 1 : n
-                        
+        cm.set_derivatives( param );
+
+        % execute the sequence
+        
+        for i_n = 1 : par.train
+            
             % RF pulse
-                        
-            opt_RF.handle_FlipAngle = idx_alpha( i_n );
-            opt_RF.handle_Phase = idx_phase( i_n );
             
-            cm.RF( alpha( idx_alpha( i_n ) ), phase( idx_phase( i_n ) ) , opt_RF );
+            param = [];
+            param.FlipAngle = var.FlipAngle( idx.fa( i_n ) );
+            param.Phase = var.Phase( idx.ph( i_n ) );
+            param.handle_FlipAngle = idx.fa( i_n );
+            param.handle_Phase = idx.ph( i_n );
             
-            % time interval
+            cm.RF( param );
 
-            opt_time.tau = tau( idx_tau( i_n ) );
-            opt_time.p = p( :, idx_tau( i_n ) );
+            % time interval
             
-            if ( b_diff && b_shape )
+            param = [];
+            param.mu = idx.tau( i_n );
+            param.tau = var.tau( idx.tau( i_n ) );
+            param.p = var.p( :, idx.tau( i_n ) );
             
-                opt_time.s = s( :, idx_tau( i_n ) );
+            if ( isequal( par.shape, 'explicit' ) )
+                
+                param.s = var.s( :, idx.tau( i_n ) );
+                
+                if ( isequal( par.diffusion, 'isotropic' ) )
+                    
+                    param.S = var.S( idx.tau( i_n ) );
+                    
+                elseif ( isequal( par.diffusion, 'tensor' ) )
+                
+                    param.S = var.S( :, :, idx.tau( i_n ) );
+
+                end
                 
             end
-                       
-            cm.time( idx_tau( i_n ), opt_time );
-
+            
+            cm.time( param );
+            
         end
-
-        if ( b_iso )
+        
+        if ( isequal( par.check, 'isochromats' ) )
             
             if ( i_x == 0 )
                 
-                iso0 = cm.isochromat( 0, [], [] );
+                param = [];
+                
+                res0 = cm.sum( param );
+                diso0.dxy = res0.dxy.( [ 'd', par.derivative ] )( :, 1 );
+                diso0.dz = res0.dz.( [ 'd', par.derivative ] )( :, 1 );
+                lin0 = sum( [ diso0.dxy, diso0.dz ] .* dx_vec, 1 );
+                
+                disp( lin0 );
                 
             else
                 
-                iso = cm.isochromat( 0, [], [] );
+                param = [];
+                
+                res = cm.sum( param );
+                
+                d_m = ( [ res.xy - res0.xy, res.z - res0.z ] ) ./ x( i_x );
+                       
+                disp( d_m );
+                
+                d_m = d_m - lin0;
                 
             end
             
-        else
-            
-            if ( isequal( der_str{ i_d }, 'R1' ) )
+        elseif ( isequal( par.check, 'configurations' ) )
+
+            if ( i_x == 0 )
                 
-                if ( i_x == 0 )
-                    
-                    
-                    m0 = cm.m( :, idx_dR1( 1 ), cm.b_n );
-                    d_m0 = cm.dm_dR1( :, 1, cm.b_n );
-                    
-                else
-                    
-                    d_m = ( cm.m( :, idx_dR1( 1 ), cm.b_n ) - m0 ) ./ ( cm.R1( idx_dR1( 1 ) ) - R1( idx_dR1( 1 ) ) ) - d_m0;
-                    
-                end
+                m0 = cm.m( :, :, cm.b_n );
+                d_m0 = cm.dm.( [ 'd', par.derivative ] )( :, :, cm.b_n, :, 1 );
                 
-            elseif ( isequal( der_str{ i_d }, 'R2' ) )
+            else
                 
-                if ( i_x == 0 )
-                    
-                    m0 = cm.m( :, idx_dR2( 1 ), cm.b_n );
-                    d_m0 = cm.dm_dR2( :, 1, cm.b_n );
-                    
-                else
-                    
-                    d_m = ( cm.m( :, idx_dR2( 1 ), cm.b_n ) - m0 ) ./ ( cm.R2( idx_dR2( 1 ) ) - R2( idx_dR2( 1 ) ) ) - d_m0;
-                    
-                end
-                
-            elseif ( isequal( der_str{ i_d }, 'D' ) )
-                
-                if ( i_x == 0 )
-                    
-                    m0 = cm.m( :, idx_dD( 1 ), cm.b_n );
-                    d_m0 = cm.dm_dD( :, 1, cm.b_n );
-                    
-                else
-                    
-                    d_m = ( cm.m( :, idx_dD( 1 ), cm.b_n ) - m0 ) ./ ( cm.D( idx_dD( 1 ) ) - D( idx_dD( 1 ) ) ) - d_m0;
-                    
-                end
-                
-            elseif ( isequal( der_str{ i_d }, 'B1' ) )
-                
-                if ( i_x == 0 )
-                    
-                    m0 = cm.m( :, :, cm.b_n );
-                    d_m0 = cm.dm_dB1( :, :, cm.b_n );
-                    
-                else
-                    
-                    d_m = ( cm.m( :, :, cm.b_n ) - m0 ) ./ ( cm.B1 - B1 ) - d_m0;
-                    
-                end
-                
-            elseif ( isequal( der_str{ i_d }, 'FlipAngle' ) )
-                
-                if ( i_x == 0 )
-                    
-                    m0 = cm.m( :, :, cm.b_n );
-                    d_m0 = cm.dm_dFlipAngle( :, :, cm.b_n );
-                    
-                else
-                    
-                    d_m = ( cm.m( :, :, cm.b_n ) - m0 ) ./ ( alpha( idx_dFlipAngle( 1 ) ) - alpha_0( idx_dFlipAngle( 1 ) ) ) - d_m0;
-                    
-                end
-                
-            elseif ( isequal( der_str{ i_d }, 'Phase' ) )
-                
-                if ( i_x == 0 )
-                    
-                    m0 = cm.m( :, :, cm.b_n );
-                    d_m0 = cm.dm_dPhase( :, :, cm.b_n );
-                    
-                else
-                    
-                    d_m = ( cm.m( :, :, cm.b_n ) - m0 ) ./ ( phase( idx_dPhase( 1 ) ) - phase_0( idx_dPhase( 1 ) ) ) - d_m0;
-                    
-                end
-                
-            elseif ( isequal( der_str{ i_d }, 'tau' ) )
-                
-                if ( i_x == 0 )
-                    
-                    m0 = cm.m( :, :, cm.b_n );
-                    d_m0 = cm.dm_dtau( :, :, cm.b_n );
-                    
-                else
-                    
-                    d_m = ( cm.m( :, :, cm.b_n ) - m0 ) ./ ( tau( idx_dtau( 1 ) ) - tau_0( idx_dtau( 1 ) ) ) - d_m0;
-                    
-                end
-                
-            elseif ( isequal( der_str{ i_d }, 'p' ) )
-                
-                if ( i_x == 0 )
-                    
-                    m0 = cm.m( :, :, cm.b_n );
-                    d_m0 = sum( cm.dm_dp( :, :, cm.b_n, :, 1 ) .* reshape( dp, [ 1, 1, 1, 3 ] ), 4 );
-                    
-                else
-                    
-                    d_m = ( cm.m( :, :, cm.b_n ) - m0 ) ./ x( i_x ) - d_m0;
-                    
-                end
-                
-            elseif ( isequal( der_str{ i_d }, 's' ) )
-                
-                if ( i_x == 0 )
-                    
-                    m0 = cm.m( :, :, cm.b_n );
-                    d_m0 = sum( cm.dm_ds( :, :, cm.b_n, :, 1 ) .* reshape( ds, [ 1, 1, 1, 4 ] ), 4 );
-                    
-                else
-                    
-                    d_m = ( cm.m( :, :, cm.b_n ) - m0 ) ./ x( i_x ) - d_m0;
-                    
-                end
+                d_m = ( cm.m( :, :, cm.b_n ) - m0 ) ./ x( i_x ) - ...
+                    sum( d_m0 .* reshape( dx_vec, [ 1, 1, 1, length( dx_vec ) ] ), 4 );
                 
             end
-            
+                        
         end
         
         if ( i_x > 0 )
-            
-            if( b_iso )
-                
-                if ( isequal( der_str{ i_d }, 'R1' ) )
-                    
-                    d_m = ( [ iso.xy - iso0.xy, iso.z - iso0.z ] ) ./ ( cm.R1( idx_dR1( 1 ) ) - R1( idx_dR1( 1 ) ) ) - [ iso0.dm_dR1.xy( 1 ), iso0.dm_dR1.z( 1 ) ];
-                    
-                elseif ( isequal( der_str{ i_d }, 'R2' ) )
-                
-                    d_m = ( [ iso.xy - iso0.xy, iso.z - iso0.z ] ) ./ ( cm.R2( idx_dR2( 1 ) ) - R2( idx_dR2( 1 ) ) ) - [ iso0.dm_dR2.xy( 1 ), iso0.dm_dR2.z( 1 ) ];
-                    
-                elseif ( isequal( der_str{ i_d }, 'D' ) )
-                
-                    d_m = ( [ iso.xy - iso0.xy, iso.z - iso0.z ] ) ./ ( cm.D( idx_dD( 1 ) ) - D( idx_dD( 1 ) ) ) - [ iso0.dm_dD.xy( 1 ), iso0.dm_dD.z( 1 ) ];
-                    
-                elseif ( isequal( der_str{ i_d }, 'B1' ) )
-                
-                    d_m = ( [ iso.xy - iso0.xy, iso.z - iso0.z ] ) ./ ( cm.B1 - B1 ) - [ iso0.dm_dB1.xy, iso0.dm_dB1.z ];
-                    
-                elseif ( isequal( der_str{ i_d }, 'FlipAngle' ) )
-                
-                    d_m = ( [ iso.xy - iso0.xy, iso.z - iso0.z ] ) ./ ( alpha( idx_dFlipAngle( 1 ) ) - alpha_0( idx_dFlipAngle( 1 ) ) ) - [ iso0.dm_dFlipAngle.xy( 1 ), iso0.dm_dFlipAngle.z( 1 ) ];
-                    
-                elseif ( isequal( der_str{ i_d }, 'Phase' ) )
-                
-                    d_m = ( [ iso.xy - iso0.xy, iso.z - iso0.z ] ) ./ ( phase( idx_dPhase( 1 ) ) - phase_0( idx_dPhase( 1 ) ) ) - [ iso0.dm_dPhase.xy( 1 ), iso0.dm_dPhase.z( 1 ) ];
-                    
-                elseif ( isequal( der_str{ i_d }, 'tau' ) )
-                
-                    d_m = ( [ iso.xy - iso0.xy, iso.z - iso0.z ] ) ./ ( tau( idx_dtau( 1 ) ) - tau_0( idx_dtau( 1 ) ) ) - [ iso0.dm_dtau.xy( 1 ), iso0.dm_dtau.z( 1 ) ];
-                    
-               elseif ( isequal( der_str{ i_d }, 'p' ) )
-
-                    d_m = ( [ iso.xy - iso0.xy, iso.z - iso0.z ] ) ./ x( i_x ) - ...
-                        sum( [ iso0.dm_dp.xy( :, 1 ), iso0.dm_dp.z( :, 1 ) ] .* dp );
-                    
-               elseif ( isequal( der_str{ i_d }, 's' ) )
-
-                    d_m = ( [ iso.xy - iso0.xy, iso.z - iso0.z ] ) ./ x( i_x ) - ...
-                        sum( [ iso0.dm_ds.xy( :, 1 ), iso0.dm_ds.z( :, 1 ) ] .* ds );
-                    
-                end
-                    
-            end
             
             rel_diff( i_x ) = sqrt( real( d_m( : )' * d_m( : ) ) );
             
         end
         
     end
-        
-    subplot( ceil( length( der_str ) / 3 ), 3, i_d );
     
-    loglog( x, rel_diff, '*', x, rel_diff( end ) .* x ./ x( end ) );
-    title( der_str{ i_d } );
- 
+    subplot( 1, 1, 1 );
+    
+    loglog( x, rel_diff, '*', x, rel_diff( 1 ) .* x ./ x( 1 ) );
+    title( par.derivative );
+    
 end

@@ -1,14 +1,14 @@
 
 # Table of Contents
 
-1.  [Background](#orge6dcb90)
-2.  [The Toolkit](#orga502b09)
-3.  [Current State](#org85549c6)
-4.  [Recommended First Steps](#orgada20d0)
-5.  [Feedback](#org299d773)
+1.  [Background](#org28a10a7)
+2.  [The Toolkit](#org8b6a8f9)
+3.  [Current State](#orga3ff997)
+4.  [Recommended First Steps](#org4ad2eb9)
+5.  [Feedback](#org8f139e4)
 
 
-<a id="orge6dcb90"></a>
+<a id="org28a10a7"></a>
 
 # Background
 
@@ -32,7 +32,7 @@ the microscopic **configuration model (CM)**, which is closely related to the EP
 but postpones the transition to the voxel scale, until it is actually needed.
 
 
-<a id="orga502b09"></a>
+<a id="org8b6a8f9"></a>
 
 # The Toolkit
 
@@ -50,7 +50,7 @@ For installation, just add the `matlab/` folder with subdirectories to your Matl
 **Important**: A Matlab version of **R2016b** or later is required, since implicit expansion is used a lot.
 
 
-<a id="org85549c6"></a>
+<a id="orga3ff997"></a>
 
 # Current State
 
@@ -85,7 +85,7 @@ folder. The following table gives a brief overview on the actual state.
 
 <tr>
 <td class="org-left">Diffusion</td>
-<td class="org-left">partly (isotropic)</td>
+<td class="org-left">yes</td>
 <td class="org-left">yes</td>
 </tr>
 
@@ -101,7 +101,7 @@ folder. The following table gives a brief overview on the actual state.
 It will be updated.
 
 
-<a id="orgada20d0"></a>
+<a id="org4ad2eb9"></a>
 
 # Recommended First Steps
 
@@ -109,7 +109,7 @@ It will be updated.
 -   The scripts in the folders `examples/` and `test/` show typical usage scanarios and should serve as good starting points.
 
 
-<a id="org299d773"></a>
+<a id="org8f139e4"></a>
 
 # Feedback
 
