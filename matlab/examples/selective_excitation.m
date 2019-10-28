@@ -24,7 +24,7 @@ opt.T1 = [];
 opt.T2 = [];
 opt.D = [];
 opt.fa = [];
-opt.sl_th= [];
+opt.sl_th = [];
 opt.t_rf = [];
 opt.supp_rf = [];
 opt.qual_rf = [];
@@ -35,7 +35,7 @@ str.T1 = '[ms]';
 str.T2 = '[ms]';
 str.D = '[um^2/mm] isotropic ADC';
 str.fa = '[deg] flip angle';
-str.sl_th= '[mm] slice thickness';
+str.sl_th = '[mm] slice thickness';
 str.t_rf = '[ms] RF pulse duration';
 str.supp_rf = 'number of RF support points';
 str.qual_rf = 'number of SINC pulse zero crossings (on each side)';
@@ -44,7 +44,7 @@ str.verbose = 'provide some informal output';
 
 while ( true )
     
-    [ par, sel ] = set_field_values( par, opt, str );
+    [ par, sel ] = sfv( par, opt, str );
     
     if ( sel == -1 )
         

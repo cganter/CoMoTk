@@ -1,5 +1,5 @@
-function [ out, sel ] = set_field_values ( in, varargin )
-%SET_FIELD_VALUES set multiple field values interactively
+function [ out, sel ] = sfv ( in, varargin )
+%SFV set multiple field values interactively
 
 out = in;
 

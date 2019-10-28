@@ -37,9 +37,9 @@ classdef CoMoTk < matlab.mixin.Copyable
     
     properties
         
-        % linewidth function handle
+        % function handle for inhomogeneous broadening
         
-        linewidth = [];
+        inhomogeneous_decay = [];
         
     end
     
@@ -533,7 +533,7 @@ classdef CoMoTk < matlab.mixin.Copyable
             
             if ( max( abs( R2p ) ) > 0 )
             
-                cm.linewidth = @cm.lorentz;
+                cm.inhomogeneous_decay = @cm.lorentz_decay;
             
             end
             
@@ -1705,11 +1705,11 @@ classdef CoMoTk < matlab.mixin.Copyable
                                                                                           
             end
 
-            % *= linewidth effects (if applicable, most commonly due to R2p)
+            % *= effects due to inhomogeneous broadening (if applicable, most commonly due to R2p)
             
-            if ( ~isempty( cm.linewidth ) )
+            if ( ~isempty( cm.inhomogeneous_decay ) )
                 
-                w_n_ = w_n_ .* cm.linewidth( cm.tau_n( b_n_ ) );
+                w_n_ = w_n_ .* cm.inhomogeneous_decay( cm.tau_n( b_n_ ) );
                 
             end
             
@@ -1762,7 +1762,7 @@ classdef CoMoTk < matlab.mixin.Copyable
         
         %% Lorentz function
         
-        function res = lorentz ( cm, tau )
+        function res = lorentz_decay ( cm, tau )
            
             res = exp( - cm.R2p .* reshape( tau, [ 1, length( tau ) ] ) );
             

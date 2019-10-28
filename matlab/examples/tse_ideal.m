@@ -3,21 +3,9 @@
 
 %% Simulation parameters
 
-par = [];
 opt = [];
+par = [];
 str = [];
-
-par.T1 = 100;
-par.T2 = 10;
-par.D = 0;
-par.resolution = 1;
-par.n_echoes = 10;
-par.n_TR = 1;
-par.TR = 100;
-par.dTE = 1;
-par.fa_exc = 90;
-par.fa_ref = 180;
-par.B1 = 1;
 
 opt.T1 = [];
 opt.T2 = [];
@@ -30,6 +18,20 @@ opt.dTE = [];
 opt.fa_exc = [];
 opt.fa_ref = [];
 opt.B1 = [];
+opt.show = { 'Magnitude', 'Phase', 'Real Part', 'Imaginary Part' };
+
+par.T1 = 100;
+par.T2 = 10;
+par.D = 0;
+par.resolution = 1;
+par.n_echoes = 10;
+par.n_TR = 1;
+par.TR = 100;
+par.dTE = 1;
+par.fa_exc = 90;
+par.fa_ref = 180;
+par.B1 = 1;
+par.show = opt.show{ 1 };
 
 str.T1 = '[ms]';
 str.T2 = '[ms]';
@@ -42,10 +44,11 @@ str.dTE = '[ms] echo spacing';
 str.fa_exc = '[deg] excitation flip angle (nominal, without B1+)';
 str.fa_ref = '[deg] refocusing flip angle (nominal, without B1+)';
 str.B1 = 'relative B1+';
+str.show = 'What to display';
 
 while ( true )
     
-    [ par, sel ] = set_field_values( par, opt, str );
+    [ par, sel ] = sfv( par, opt, str );
     
     if ( sel == -1 )
         
@@ -229,13 +232,35 @@ while ( true )
     
     te = ( 1 : par.n_echoes )' .* par.dTE;
     
+    if ( isequal( par.show, 'Magnitude' ) )
+        
+        cpmg = abs( m_cpmg( :, end ) );
+        no_cpmg = abs( m_no_cpmg( :, end ) );
+    
+    elseif ( isequal( par.show, 'Phase' ) )
+        
+        cpmg = angle( m_cpmg( :, end ) );
+        no_cpmg = angle( m_no_cpmg( :, end ) );
+    
+    elseif ( isequal( par.show, 'Real Part' ) )
+        
+        cpmg = real( m_cpmg( :, end ) );
+        no_cpmg = real( m_no_cpmg( :, end ) );
+    
+    elseif ( isequal( par.show, 'Imaginary Part' ) )
+        
+        cpmg = imag( m_cpmg( :, end ) );
+        no_cpmg = imag( m_no_cpmg( :, end ) );
+    
+    end
+        
     subplot( 1, 2, 1 );
-    plot( te, abs( m_cpmg( :, end ) ), te, abs( m_no_cpmg( :, end ) ) );
+    plot( te, cpmg, te, no_cpmg );
     legend( 'CPMG', 'no CPMG' );
     title( 'ideal TSE' );
     
     subplot( 1, 2, 2 );
-    semilogy( te, abs( m_cpmg( :, end ) ), te, abs( m_no_cpmg( :, end ) ) );
+    semilogy( te, cpmg, te, no_cpmg );
     legend( 'CPMG', 'no CPMG' );
     title( 'ideal TSE' );
     

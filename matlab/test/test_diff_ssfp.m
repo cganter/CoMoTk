@@ -28,7 +28,7 @@ str.fa = '[deg] flip angle';
 
 while ( true )
     
-    [ par, sel ] = set_field_values( par, opt, str );
+    [ par, sel ] = sfv( par, opt, str );
     
     if ( sel == -1 )
         

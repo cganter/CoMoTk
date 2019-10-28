@@ -1,6 +1,7 @@
+
 %% GRE sequence
-% This script compares an idealized versus realistic implementation of a GRE sequence
-% no diffusion or spin coupling
+% For GRE sequences (balanced or unbalanced) and a pure tissue,
+% this script compares the effect of idealized (instantaneous) versus realistic RF pulses
 
 %% Simulation parameters
 
@@ -12,6 +13,7 @@ par.ssfp = 'balanced';
 par.T1 = 1000;
 par.T2 = 100;
 par.D = 0;
+par.resolution = 1;
 par.TR = 5;
 par.TE = 2;
 par.num_TR = 5;
@@ -19,6 +21,7 @@ par.B1 = 1;
 par.fa = 50;
 par.ph_inc = 180;
 par.phd_inc = 0;
+par.res = 1;
 par.sl_th = 1;
 par.t_rf = 1;
 par.supp_rf = 100;
@@ -31,6 +34,7 @@ opt.ssfp = { 'balanced', 'unbalanced' };
 opt.T1 = [];
 opt.T2 = [];
 opt.D = [];
+opt.resolution = [];
 opt.TR = [];
 opt.TE = [];
 opt.num_TR = [];
@@ -38,7 +42,7 @@ opt.B1 = [];
 opt.fa = [];
 opt.ph_inc = [];
 opt.phd_inc = [];
-opt.sl_th= [];
+opt.sl_th = [];
 opt.t_rf = [];
 opt.supp_rf = [];
 opt.qual_rf = [];
@@ -50,6 +54,7 @@ str.ssfp = 'SSFP variant to simulate';
 str.T1 = '[ms]';
 str.T2 = '[ms]';
 str.D = '[um^2/mm] isotropic ADC';
+str.resolution = '[mm] in-plane resolution (determines 2*pi crusher, relevant for D ~= 0 only)';
 str.TR = '[ms] repetition time';
 str.TE = '[ms] echo time (t_rf / 2 <= TE <= TR - t_rf / 2)';
 str.num_TR = 'number of TR intervals to simulate';
@@ -57,7 +62,7 @@ str.B1 = 'relative B1+';
 str.fa = '[deg] flip angle';
 str.ph_inc = '[deg] RF phase increment (same as negative off-resonance)' ;
 str.phd_inc = '[deg] RF phase difference increment (RF spoiling)';
-str.sl_th= '[mm] slice thickness';
+str.sl_th = '[mm] slice thickness';
 str.t_rf = '[ms] RF pulse duration';
 str.supp_rf = 'number of RF support points';
 str.qual_rf = 'number of SINC pulse zero crossings (on each side)';
@@ -67,9 +72,9 @@ str.verbose = 'provide some informal output';
 
 while ( true )
     
-    [ par, sel ] = set_field_values( par, opt, str );
+    [ par, select_conf ] = sfv( par, opt, str );
     
-    if ( sel == -1 )
+    if ( select_conf == -1 )
         
         break;
         
@@ -80,9 +85,9 @@ while ( true )
     
     ph_deg = zeros( par.num_TR, 1 );
     
-    for i = 2 : par.num_TR
+    for idx_TR = 2 : par.num_TR
         
-        ph_deg( i ) = ph_deg( i - 1 ) + par.ph_inc + ( i - 1 ) * par.phd_inc;
+        ph_deg( idx_TR ) = ph_deg( idx_TR - 1 ) + par.ph_inc + ( idx_TR - 1 ) * par.phd_inc;
         
     end
     
@@ -114,7 +119,7 @@ while ( true )
         
         al = ( 0.54 + 0.46 .* cos( pi .* t ./ par.qual_rf ) ) .* sinc( t );
         
-    else
+    elseif ( isequal( par.filt_rf, 'None' ) )
         
         al = sinc( t );
         
@@ -135,99 +140,111 @@ while ( true )
         verbose = false;
         
     end
+        
+    % in-plane crusher gradient moment
     
+    p_cru = 2 * pi / ( 1000 * par.resolution );
     
     %% initialize configuration model (idealized sequence)
 
-    if ( isequal( par.ssfp, 'unbalanced' ) )
-        
-        % ======== unbalanced ========
-        
-        cm_SSFP_ideal = CoMoTk;
-        
-        % mandatory tissue parameters
-        
-        cm_SSFP_ideal.R1 = 1 / par.T1;
-        cm_SSFP_ideal.R2 = 1 / par.T2;
-        cm_SSFP_ideal.D = par.D;
-        
-        % further parameters
-        
-        cm_SSFP_ideal.B1 = par.B1;
-        
-        % set options
-        
-        options = cm_SSFP_ideal.options;
-        options.alloc_n = 1000;  % CoMoTk will allocate more, if needed
-        options.alloc_d = 2;        % before and after echo
-        options.epsilon = par.epsilon;
-        cm_SSFP_ideal.options = options;
-        
-        % start with longitudinal magnetization
-        
-        cm_SSFP_ideal.init_configuration ( [ 0; 0; 1 ] );
-        
-        % prepare time between end of RF pulse and echo
-        % unique index
-        
-        mu_SSFP_ideal_pre = 1;
-        mu_SSFP_ideal_post = 2;
-        
-        % duration
-        
-        tau_SSFP_ideal_pre = par.TE;
-        tau_SSFP_ideal_post = par.TR - par.TE;
-        
-    else
-        
-        % ======== balanced ========
-        
-        cm_bSSFP_ideal = CoMoTk;
-        
-        % mandatory tissue parameters
-        
-        cm_bSSFP_ideal.R1 = 1 / par.T1;
-        cm_bSSFP_ideal.R2 = 1 / par.T2;
-        cm_bSSFP_ideal.D = par.D;
-        
-        % further parameters
-        
-        cm_bSSFP_ideal.B1 = par.B1;
-        
-        % set options
-        
-        options = cm_bSSFP_ideal.options;
-        options.alloc_n = 1000;  % CoMoTk will allocate more, if needed
-        options.alloc_d = 1;        % TE = TR / 2
-        options.epsilon = par.epsilon;
-        cm_bSSFP_ideal.options = options;
-        
-        % start with longitudinal magnetization
-        
-        cm_bSSFP_ideal.init_configuration ( [ 0; 0; 1 ] );
-        
-        % prepare time between end of RF pulse and echo
-        % unique index
-        
-        mu_bSSFP_ideal = 1;
-        
-        % duration
-        
-        tau_bSSFP_ideal = par.TR / 2;
+    cm_ideal = CoMoTk;
+    
+    % mandatory tissue parameters
+    
+    cm_ideal.R1 = 1 / par.T1;
+    cm_ideal.R2 = 1 / par.T2;
+    cm_ideal.D = par.D;
+    
+    % further parameters
+    
+    cm_ideal.B1 = par.B1;
+    
+    % prepare RF pulses
+    
+    RF_ideal = cell( 1, par.num_TR );
+    
+    for idx_TR = 1 : par.num_TR
+
+        RF_ideal{ idx_TR }.FlipAngle = fa_rad;
+        RF_ideal{ idx_TR }.Phase = ph_rad( idx_TR );
         
     end
     
+    % prepare time periods
+
+    RF_to_Echo_ideal = [];
+    Echo_to_RF_ideal = [];
+
+    if ( isequal( par.ssfp, 'unbalanced' ) )
+        
+        RF_to_Echo_ideal.mu = 1; % unique index
+        RF_to_Echo_ideal.tau = par.TE;
+        RF_to_Echo_ideal.p = [ 0; 0; 0 ]; % no crusher here ...
+        
+        Echo_to_RF_ideal.mu = 2;
+        Echo_to_RF_ideal.tau = par.TR - par.TE;
+        Echo_to_RF_ideal.p = [ p_cru; 0; 0 ]; % ... but after the echo
+        
+    elseif ( isequal( par.ssfp, 'balanced' ) )
+
+        RF_to_Echo_ideal.mu = 1; % unique index
+        RF_to_Echo_ideal.tau = par.TR / 2; % for balanced SSFP, we consider a centered echo 
+        RF_to_Echo_ideal.p = [ 0; 0; 0 ]; % no crusher
+        
+        Echo_to_RF_ideal = RF_to_Echo_ideal; % the two intervals are equivalent (duration & (zero) gradient moment)
+                
+    end
+    
+    % set options
+    
+    options = cm_ideal.options;
+
+    options.alloc_n = 1000;  % CoMoTk will allocate more, if needed
+    options.alloc_d = 2;     % enough for both variants (unbalanced == 2, balanced == 1)
+    options.epsilon = par.epsilon;
+
+    cm_ideal.options = options;
+    
+    % start with longitudinal magnetization
+        
+    cm_ideal.init_configuration ( [ 0; 0; 1 ] );
+                
     %% initialize configuration model (real sequence)
+
+    cm_real = CoMoTk;
     
-    % ======== prepare RF pulse plateau ========
+    % mandatory tissue parameters
     
-    % unique index
+    cm_real.R1 = 1 / par.T1;
+    cm_real.R2 = 1 / par.T2;
+    cm_real.D = par.D;
     
-    mu_real_rf = 1;
+    % further parameters
     
-    % duration
+    cm_real.B1 = par.B1;
     
-    tau_real_rf = par.t_rf / par.supp_rf;
+    % approximate real RF pulses as sequence of small instantaneous pulses ...
+
+    RF_real = cell( par.supp_rf + 1, par.num_TR );
+    
+    for idx_TR = 1 : par.num_TR
+        
+        for idx_RF = 1 : par.supp_rf + 1
+        
+            RF_real{ idx_RF, idx_TR }.FlipAngle = al_rad( idx_RF );
+            RF_real{ idx_RF, idx_TR }.Phase  = ph_rad( idx_TR );
+        
+        end
+    
+    end
+        
+    % ... separated by small time intervals of constant duration and gradient moment
+
+    DeltaTime = [];
+    DeltaTime.mu = 1;
+    DeltaTime.tau = par.t_rf / par.supp_rf;
+    
+    % the associated gradient moment is defined by RF bandwidth, pulse shape and slice thickness:
     
     % RF pulse bandwidth
     
@@ -239,365 +256,183 @@ while ( true )
     
     % split into par.supp_rf intervals
     
-    p_real_rf = [ 0; 0; p_sl / par.supp_rf ];
+    DeltaTime.p = [ 0; 0; p_sl / par.supp_rf ];
+
+    % prepare remaining time periods
+    
+    RF_to_Echo_real = [];
+    Echo_to_RF_real = [];
     
     if ( isequal( par.ssfp, 'unbalanced' ) )
         
-        % ======== unbalanced ========
+        RF_to_Echo_real.mu = 2; % unique index
+        RF_to_Echo_real.tau = par.TE - par.t_rf / 2;
+        RF_to_Echo_real.p = [ 0; 0; - p_sl / 2 ];
         
-        cm_SSFP_real = CoMoTk;
+        Echo_to_RF_real.mu = 3;
+        Echo_to_RF_real.tau = par.TR - par.TE - par.t_rf / 2;
+        Echo_to_RF_real.p = [ p_cru; 0; - p_sl / 2 ];
         
-        % mandatory tissue parameters
+    elseif ( isequal( par.ssfp, 'balanced' ) )
         
-        cm_SSFP_real.R1 = 1 / par.T1;
-        cm_SSFP_real.R2 = 1 / par.T2;
-        cm_SSFP_real.D = par.D;
+        RF_to_Echo_real.mu = 2; % unique index
+        RF_to_Echo_real.tau = ( par.TR - par.t_rf ) / 2; % for balanced SSFP, we consider a centered echo
+        RF_to_Echo_real.p = [ 0; 0; - p_sl / 2 ];
         
-        % further parameters
-        
-        cm_SSFP_real.B1 = par.B1;
-        
-        % set options
-        
-        options = cm_SSFP_real.options;
-        options.alloc_n = 10000;  % CoMoTk will allocate more, if needed
-        options.alloc_d = 3;          % 1: RF pulse plateau
-        % 2,3: before and after echo
-        options.epsilon = par.epsilon;
-        options.verbose = verbose;
-        cm_SSFP_real.options = options;
-        
-        % start with longitudinal magnetization
-        
-        cm_SSFP_real.init_configuration ( [ 0; 0; 1 ] );
-        
-        % prepare times between RF pulse and echo
-        % unique index
-        
-        mu_SSFP_real_pre = 2;
-        mu_SSFP_real_post = 3;
-        
-        % duration
-        
-        tau_SSFP_real_pre = par.TE - par.t_rf / 2;
-        tau_SSFP_real_post = par.TR - par.TE - par.t_rf / 2;
-        
-        % gradient moment == crusher and rephasing gradient
-        
-        p_SSFP_real_pre = [ 0; 0; - p_sl / 2 ];
-        p_SSFP_real_post = [ 0; 0; - p_sl / 2 ];
-        
-    else
-        
-        % ======== balanced ========
-        
-        cm_bSSFP_real = CoMoTk;
-        
-        % mandatory tissue parameters
-        
-        cm_bSSFP_real.R1 = 1 / par.T1;
-        cm_bSSFP_real.R2 = 1 / par.T2;
-        cm_bSSFP_real.D = par.D;
-        
-        % further parameters
-        
-        cm_bSSFP_real.B1 = par.B1;
-        
-        % set options
-        
-        options = cm_bSSFP_real.options;
-        options.alloc_n = 10000;  % CoMoTk will allocate more, if needed
-        options.alloc_d = 2;          % 1: RF pulse plateau
-        % 2: TE = TR / 2
-        options.epsilon = par.epsilon;
-        cm_bSSFP_real.options = options;
-        
-        % start with longitudinal magnetization
-        
-        cm_bSSFP_real.init_configuration ( [ 0; 0; 1 ] );
-        
-        % prepare times between RF pulse and echo
-        % unique index
-        
-        mu_bSSFP_real = 2;
-        
-        % duration
-        
-        tau_bSSFP_real = ( par.TR - par.t_rf ) / 2;
-        
-        % gradient moment == crusher and rephasing gradient
-        
-        p_bSSFP_real = [ 0; 0; - p_sl / 2 ];
-        
-        %% allocate space for results
-        
-        m_SSFP_ideal = zeros( par.num_TR, 1 );
-        m_bSSFP_ideal = zeros( par.num_TR, 1 );
-        m_SSFP_real = zeros( par.num_TR, 1 );
-        m_bSSFP_real = zeros( par.num_TR, 1 );
+        Echo_to_RF_real = RF_to_Echo_real; % the two intervals are equivalent (duration & (zero) gradient moment)
         
     end
-            
+    
+    % set options
+    
+    options = cm_real.options;
+    
+    options.alloc_n = 10000;  % CoMoTk will allocate more, if needed
+    options.alloc_d = 3;     % enough for both variants (unbalanced == 3, balanced == 2)
+    options.epsilon = par.epsilon;
+    options.verbose = verbose;
+    
+    cm_real.options = options;
+    
+    % start with longitudinal magnetization
+    
+    cm_real.init_configuration ( [ 0; 0; 1 ] );
+                
+    %% allocate space for results
+        
+    m_ideal = zeros( par.num_TR, 1 );
+    m_real = zeros( par.num_TR, 1 );
+
+    %% initialize timing
+    
     t_id = zeros( par.num_TR, 1 );
     t_re = zeros( par.num_TR, 1 );
 
     tic;
     t_tmp = toc;
 
-    for i = 1 : par.num_TR
+    %%  loop over TR
+    
+    for idx_TR = 1 : par.num_TR
         
-        fprintf( 1, 'i = %d / %d\n', i, par.num_TR );
+        fprintf( 1, 'i = %d / %d\n', idx_TR, par.num_TR );
                 
-        %% (b)SSFP with instantaneous RF pulse
+        %% execute (b)SSFP sequence with ideal, instantaneous pulse ...
         
+        if ( idx_TR > 1 ) % not needed before first RF pulse
+            
+            cm_ideal.time( Echo_to_RF_ideal );
+            
+        end
+        
+        cm_ideal.RF( RF_ideal{ idx_TR } );
+        
+        cm_ideal.time( RF_to_Echo_ideal );
+          
+        %% ... and extract the result
+        
+        % first we select the configurations
+        % this depends on the situation
+
         if ( isequal( par.ssfp, 'unbalanced' ) )
                         
-            % ======== unbalanced ========
+            % we assume a conventional FID sequence with crusher AFTER the echo
+            % i.e. in the interval 'Echo_to_RF'
+
+            % the associated configuration must be zero
+            % since the signal from nonzero orders is (hopefully) dephased 
             
-            % time after echo
-            % placed here, to initialize the crusher time interval
-            % otherwise b_n cannot be set for i == 1 below
-            % since the initial state is in equilibrium for i == 1, the magnetization is not changed
+            select_conf = [];
+            select_conf.b_n = cm_ideal.find( Echo_to_RF_ideal.mu, 0 );
             
-            if ( i > 1 )
-                
-                param = [];
-                param.mu = mu_SSFP_ideal_post;
-                param.tau = tau_SSFP_ideal_post;
-                
-                cm_SSFP_ideal.time( param );
-                
-            end
+        elseif ( isequal( par.ssfp, 'balanced' ) )
             
-            % excitation pulse
+            % balanced SSFP has no crusher gradients
+            % in absence of gradient dephasing, all occupied configurations contribute
+
+            select_conf = [];
+            select_conf.b_n = cm_ideal.b_n;
             
-            param = [];
-            param.FlipAngle = fa_rad;
-            param.Phase = ph_rad( i );
-            
-            cm_SSFP_ideal.RF( param );
-            
-            % time to echo
-            
-            param = [];
-            param.mu = mu_SSFP_ideal_pre;
-            param.tau = tau_SSFP_ideal_pre;
-            
-            cm_SSFP_ideal.time( param );
-            
-            % SSFP  : only the zero order configuration (= FID) contributes to the voxel signal,
-            %         (assuming a crusher was present after the echo - even, if not simulated)
-            
-            param = [];
-            param.b_n = cm_SSFP_ideal.find( mu_SSFP_ideal_post, 0 );
-            
-            % calculate the partial sum
-            
-            res = cm_SSFP_ideal.sum( param );
-            
-            % save the echo
-            
-            m_SSFP_ideal( i ) = res.xy;
-            
-        else
-            
-            % ======== balanced ========
-            
-            % time after echo
-            
-            if ( i > 1 )
-                
-                param = [];
-                param.mu = mu_bSSFP_ideal;
-                param.tau = tau_bSSFP_ideal;
-                
-                cm_bSSFP_ideal.time( param );
-                
-            end
-            
-            % excitation pulse
-            
-            param = [];
-            param.FlipAngle = fa_rad;
-            param.Phase = ph_rad( i );
-            
-            cm_bSSFP_ideal.RF( param );
-            
-            % time to echo
-            
-            param = [];
-            param.mu = mu_bSSFP_ideal;
-            param.tau = tau_bSSFP_ideal;
-            
-            cm_bSSFP_ideal.time( param );
-            
-            % bSSFP : all configurations contribute to the voxel signal
-            
-            param = [];
-            
-            res = cm_bSSFP_ideal.sum( param );
-            
-            % save the echo
-            
-            m_bSSFP_ideal( i ) = res.xy;
-                        
         end
 
-        t_id( i ) = - t_tmp;
+        % calculate the partial sum
+        
+        res = cm_ideal.sum( select_conf );
+        
+        % save the echo
+        
+        m_ideal( idx_TR ) = res.xy;
+            
+        % time spent for the ideal part
+        
+        t_id( idx_TR ) = - t_tmp;
         t_tmp = toc;
-        t_id( i ) = t_id( i ) + t_tmp;        
+        t_id( idx_TR ) = t_id( idx_TR ) + t_tmp;        
         
-        %% (b)SSFP with real RF pulse
+        %% execute (b)SSFP with real RF pulse ...
         
-        if ( isequal( par.ssfp, 'unbalanced' ) )
+        if ( idx_TR > 1 ) % not needed before first RF pulse
             
-            % ======== unbalanced ========
-            
-            % time after echo
-            
-            if ( i > 1 )
-                
-                param = [];
-                param.mu = mu_SSFP_real_post;
-                param.tau = tau_SSFP_real_post;
-                param.p = p_SSFP_real_post;
-                
-                cm_SSFP_real.time( param );
-                
-            end
-            
-            % excitation pulse
-            
-            % first small pulse
-            
-            param = [];
-            param.FlipAngle = al_rad( 1 );
-            param.Phase = ph_rad( i );
-            
-            cm_SSFP_real.RF( param );
-            
-            for j = 1 : par.supp_rf
-                
-                param = [];
-                param.mu = mu_real_rf;
-                param.tau = tau_real_rf;
-                param.p = p_real_rf;
-                
-                cm_SSFP_real.time( param );
-                
-                % and the rest of the small pulses
-                
-                param = [];
-                param.FlipAngle = al_rad( j + 1 );
-                param.Phase = ph_rad( i );
-                
-                cm_SSFP_real.RF( param );
-                
-            end
-            
-            % time to echo
-            
-            param = [];
-            param.mu = mu_SSFP_real_pre;
-            param.tau = tau_SSFP_real_pre;
-            param.p = p_SSFP_real_pre;
-            
-            cm_SSFP_real.time( param );
-            
-            % SSFP  : only the zero order configuration (= FID) contributes to the voxel signal,
-            %         (assuming a crusher was present after the echo - even, if not simulated)
-            
-            b_n = cm_SSFP_real.find( mu_SSFP_real_post, 0 );
-            
-            % slice encoding direction requires a zero gradient moment
-            
-            param = [];
-            param.b_n = b_n & reshape( abs( cm_SSFP_real.p_n( 3, : ) ) < 0.5 * p_real_rf( 3 ), size( b_n ) );
-            
-            % calculate the partial sum
-            
-            res = cm_SSFP_real.sum( param );
-            
-            % save the echo
-            
-            m_SSFP_real( i ) = res.xy;
-            
-        else
-            
-            % ======== balanced ========
-            
-            % time after echo
-            
-            if ( i > 1 )
-                
-                param = [];
-                param.mu = mu_bSSFP_real;
-                param.tau = tau_bSSFP_real;
-                param.p = p_bSSFP_real;
-                
-                cm_bSSFP_real.time( param );
-                
-            end
-            
-            % excitation pulse
-            
-            % first small pulse
-            
-            param = [];
-            param.FlipAngle = al_rad( 1 );
-            param.Phase = ph_rad( i );
-            
-            cm_bSSFP_real.RF( param );
-            
-            for j = 1 : par.supp_rf
-                
-                param = [];
-                param.mu = mu_real_rf;
-                param.tau = tau_real_rf;
-                param.p = p_real_rf;
-                
-                cm_bSSFP_real.time( param );
-                
-                % and the rest of the small pulses
-                
-                param = [];
-                param.FlipAngle = al_rad( j + 1 );
-                param.Phase = ph_rad( i );
-                
-                cm_bSSFP_real.RF( param );
-                
-            end
-            
-            % time to echo
-            
-            param = [];
-            param.mu = mu_bSSFP_real;
-            param.tau = tau_bSSFP_real;
-            param.p = p_bSSFP_real;
-            
-            cm_bSSFP_real.time( param );
-            
-            % bSSFP : only the slice encoding direction requires a zero gradient moment
-            
-            param = [];
-            param.b_n = cm_bSSFP_real.b_n & reshape( abs( cm_bSSFP_real.p_n( 3, : ) ) < 0.5 * p_real_rf( 3 ), size( cm_bSSFP_real.b_n ) );
-            
-            % calculate the partial sum
-            
-            res = cm_bSSFP_real.sum( param );
-            
-            % save the echo
-            
-            m_bSSFP_real( i ) = res.xy;
+            cm_real.time( Echo_to_RF_real );
             
         end
+
+        for idx_RF = 1 : par.supp_rf
         
-        t_re( i ) = - t_tmp;
+            cm_real.RF( RF_real{ idx_RF, idx_TR } );
+
+            cm_real.time( DeltaTime );
+        
+        end
+        
+        cm_real.RF( RF_real{ par.supp_rf + 1, idx_TR } );
+
+        cm_real.time( RF_to_Echo_real );
+
+        %% ... and extract the result
+            
+        if ( isequal( par.ssfp, 'unbalanced' ) )
+                        
+            % we assume a conventional FID sequence with crusher AFTER the echo
+            % i.e. in the interval 'Echo_to_RF'
+
+            % like in the real case, the associated configuration must be zero
+            % since the signal from nonzero orders is (hopefully) dephased 
+            
+            select_conf = [];
+            select_conf.b_n = cm_real.find( Echo_to_RF_real.mu, 0 );
+                                    
+        elseif ( isequal( par.ssfp, 'balanced' ) )
+            
+            % balanced SSFP has no crusher gradients
+            % in absence of gradient dephasing, all occupied configurations contribute
+
+            select_conf = [];
+            select_conf.b_n = cm_real.b_n;
+
+        end
+        
+        % in both cases and unlike the real case, we *further* need to integrate over the slice profile
+            
+        select_conf.b_n = select_conf.b_n & ...
+            reshape( abs( cm_real.p_n( 3, : ) ) < 0.5 * abs( DeltaTime.p( 3 ) ), size( select_conf.b_n ) );
+        
+                % calculate the partial sum
+        
+        res = cm_real.sum( select_conf );
+        
+        % save the echo
+        
+        m_real( idx_TR ) = res.xy;
+            
+        % time spent for the real part
+        
+        t_re( idx_TR ) = - t_tmp;
         t_tmp = toc;
-        t_re( i ) = t_re( i ) + t_tmp;        
+        t_re( idx_TR ) = t_re( idx_TR ) + t_tmp;        
         
-        fprintf( 1, 'ideal RF = %9.3f sec\n', t_id( i ) );
-        fprintf( 1, 'real RF  = %9.3f sec\n', t_re( i ) );
+        fprintf( 1, 'ideal RF = %9.3f sec\n', t_id( idx_TR ) );
+        fprintf( 1, 'real RF  = %9.3f sec\n', t_re( idx_TR ) );
         
     end
     
@@ -605,25 +440,29 @@ while ( true )
     fprintf( 1, 'real RF  =\t %9.3f sec total\n', sum( t_re ) );
     
     %% Show results
-    
+
     if ( isequal( par.ssfp, 'unbalanced' ) )
         
-        te_SSFP = par.TE + ( 0 : par.num_TR - 1 )' .* par.TR;
-        sc_SSFP = abs( m_SSFP_ideal( 1 ) / m_SSFP_real( 1 ) );
-        
-        subplot( 1, 1, 1 );
-        plot( te_SSFP, abs( m_SSFP_ideal ), te_SSFP, sc_SSFP .* abs( m_SSFP_real ) );
-        legend( 'ideal', 'real' );
-        title( 'SSFP' );
+        te = par.TE + ( 0 : par.num_TR - 1 )' .* par.TR;
         
     else
         
-        te_bSSFP = par.TR / 2 + ( 0 : par.num_TR - 1 )' .* par.TR;
-        sc_bSSFP = abs( m_bSSFP_ideal( 1 ) / m_bSSFP_real( 1 ) );
+        te = par.TR / 2 + ( 0 : par.num_TR - 1 )' .* par.TR;
         
-        subplot( 1, 1, 1 );
-        plot( te_bSSFP, abs( m_bSSFP_ideal ), te_bSSFP, sc_bSSFP .* abs( m_bSSFP_real ) );
-        legend( 'ideal', 'real' );
+    end
+   
+    sc = abs( m_ideal( 1 ) / m_real( 1 ) );
+
+    subplot( 1, 1, 1 );
+    plot( te, abs( m_ideal ), te, sc .* abs( m_real ) );
+    legend( 'ideal', 'real' );
+
+    if ( isequal( par.ssfp, 'unbalanced' ) )
+        
+        title( 'SSFP' );
+        
+    elseif ( isequal( par.ssfp, 'balanced' ) )
+        
         title( 'bSSFP' );
         
     end
