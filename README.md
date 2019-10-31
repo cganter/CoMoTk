@@ -1,15 +1,15 @@
 
 # Table of Contents
 
-1.  [Background](#org3b8881f)
-2.  [Quick Start Guide](#org1f4eabc)
-    1.  [Installation](#org6a8545a)
-    2.  [Small Example (sample FID of SSFP during transient phase)](#orgb91ff9a)
-3.  [Current State](#orgfb4d995)
-4.  [Feedback](#orgddb2363)
+1.  [Background](#org32d3aec)
+2.  [Quick Start Guide](#orge022e46)
+    1.  [Installation](#org4a80ec4)
+    2.  [Small Example](#org58d8dc8)
+3.  [Current State](#org56194ca)
+4.  [Feedback](#org95962a4)
 
 
-<a id="org3b8881f"></a>
+<a id="org32d3aec"></a>
 
 # Background
 
@@ -40,12 +40,12 @@ The following non-exhaustive list shows a few possible options and alternatives:
 It is based upon a generalized version of the so-called configuration model, which will be described elsewhere.
 
 
-<a id="org1f4eabc"></a>
+<a id="orge022e46"></a>
 
 # Quick Start Guide
 
 
-<a id="org6a8545a"></a>
+<a id="org4a80ec4"></a>
 
 ## Installation
 
@@ -54,12 +54,14 @@ Just add the `matlab/` folder with subdirectories to your Matlab path.
 **Important**: A Matlab version of **R2016b** or later is required, since implicit expansion is used a lot.
 
 
-<a id="orgb91ff9a"></a>
+<a id="org58d8dc8"></a>
 
-## Small Example (sample FID of SSFP during transient phase)
+## Small Example
 
 The following example should a first impression of how to work with the toolkit, while the [User Guide](doc/CoMoTk_UserGuide.pdf) gives a complete overview of the available options. It is also recommended to look at the scripts in the `test` and `examples` folders, which cover typical application scenarios and may serve as templates for own projects. To make full use of the toolkit, it is important to understand the theory behind the configuration model, which will be presented in an article (link will be given, as soon as available).
 
+    % Example: sample FID of SSFP during transient phase 
+    
     % initialize class
     cm = CoMoTk;      
     
@@ -84,7 +86,7 @@ The following example should a first impression of how to work with the toolkit,
     n_TR = 100;
     
     % allocate space for results
-    m_xy = zeros( n_TR );
+    m_xy = zeros( n_TR, 1 );
     
     % set initial state (here: pure longitudinal magnetization)
     cm.init_configuration ( [ 0; 0; 1 ] );  
@@ -112,7 +114,7 @@ The following example should a first impression of how to work with the toolkit,
     % done
 
 
-<a id="orgfb4d995"></a>
+<a id="org56194ca"></a>
 
 # Current State
 
@@ -163,7 +165,7 @@ folder. The following table gives a brief overview on the actual state.
 It will be updated.
 
 
-<a id="orgddb2363"></a>
+<a id="org95962a4"></a>
 
 # Feedback
 
