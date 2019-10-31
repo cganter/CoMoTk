@@ -1,15 +1,14 @@
 
 # Table of Contents
 
-1.  [Background](#org32d3aec)
-2.  [Quick Start Guide](#orge022e46)
-    1.  [Installation](#org4a80ec4)
-    2.  [Small Example](#org58d8dc8)
-3.  [Current State](#org56194ca)
-4.  [Feedback](#org95962a4)
+1.  [Background](#org58e5d3f)
+2.  [Installation](#orgc09f64f)
+3.  [Small Example](#org912fd6a)
+4.  [Current State](#org85c9e49)
+5.  [Feedback](#org458ba54)
 
 
-<a id="org32d3aec"></a>
+<a id="org58e5d3f"></a>
 
 # Background
 
@@ -40,23 +39,18 @@ The following non-exhaustive list shows a few possible options and alternatives:
 It is based upon a generalized version of the so-called configuration model, which will be described elsewhere.
 
 
-<a id="orge022e46"></a>
+<a id="orgc09f64f"></a>
 
-# Quick Start Guide
-
-
-<a id="org4a80ec4"></a>
-
-## Installation
+# Installation
 
 Just add the `matlab/` folder with subdirectories to your Matlab path.
 
 **Important**: A Matlab version of **R2016b** or later is required, since implicit expansion is used a lot.
 
 
-<a id="org58d8dc8"></a>
+<a id="org912fd6a"></a>
 
-## Small Example
+# Small Example
 
 The following example should a first impression of how to work with the toolkit, while the [User Guide](doc/CoMoTk_UserGuide.pdf) gives a complete overview of the available options. It is also recommended to look at the scripts in the `test` and `examples` folders, which cover typical application scenarios and may serve as templates for own projects. To make full use of the toolkit, it is important to understand the theory behind the configuration model, which will be presented in an article (link will be given, as soon as available).
 
@@ -114,7 +108,7 @@ The following example should a first impression of how to work with the toolkit,
     % done
 
 
-<a id="org56194ca"></a>
+<a id="org85c9e49"></a>
 
 # Current State
 
@@ -165,7 +159,7 @@ folder. The following table gives a brief overview on the actual state.
 It will be updated.
 
 
-<a id="org95962a4"></a>
+<a id="org458ba54"></a>
 
 # Feedback
 
