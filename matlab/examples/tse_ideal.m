@@ -48,7 +48,8 @@ str.show = 'What to display';
 
 while ( true )
     
-    [ par, sel ] = sfv( par, opt, str );
+%    [ par, sel ] = sfv( par, opt, str );
+    [ par, sel ] = set_field_values( par, opt, str );
     
     if ( sel == -1 )
         
@@ -107,7 +108,7 @@ while ( true )
     
     % unique index
     
-    mu_te = 1;
+    lambda_te = 1;
     
     % duration
     
@@ -121,7 +122,7 @@ while ( true )
     
     % unique index
     
-    mu_tr = 2;
+    lambda_tr = 2;
     
     % duration
     
@@ -154,7 +155,7 @@ while ( true )
             % time to refucusing pulse
             
             param = [];
-            param.mu = mu_te;
+            param.lambda = lambda_te;
             param.tau = tau_te;
             param.p = p_te;
             
@@ -176,7 +177,7 @@ while ( true )
             % time to echo
             
             param = [];
-            param.mu = mu_te;
+            param.lambda = lambda_te;
             param.tau = tau_te;
             param.p = p_te;
             
@@ -187,7 +188,7 @@ while ( true )
             % only the zero order configuration along the crusher direction contributes to the voxel signal
             
             param = [];
-            param.b_n = cm_cpmg.find( mu_te, 0 );
+            param.b_n = cm_cpmg.find( lambda_te, 0 );
             
             % calculate the partial sum
             
@@ -200,7 +201,7 @@ while ( true )
             % no CPMG
             
             param = [];
-            param.b_n = cm_no_cpmg.find( mu_te, 0 );
+            param.b_n = cm_no_cpmg.find( lambda_te, 0 );
             
             % calculate the partial sum
             
@@ -217,7 +218,7 @@ while ( true )
             % time to next excitation pulse
             
             param = [];
-            param.mu = mu_tr;
+            param.lambda = lambda_tr;
             param.tau = tau_tr;
             param.p = p_tr;
             

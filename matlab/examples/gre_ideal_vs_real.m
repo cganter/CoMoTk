@@ -1,4 +1,3 @@
-
 %% GRE sequence
 % For GRE sequences (balanced or unbalanced) and a pure tissue,
 % this script compares the effect of idealized (instantaneous) versus realistic RF pulses
@@ -177,17 +176,17 @@ while ( true )
 
     if ( isequal( par.ssfp, 'unbalanced' ) )
         
-        RF_to_Echo_ideal.mu = 1; % unique index
+        RF_to_Echo_ideal.lambda = 1; % unique index
         RF_to_Echo_ideal.tau = par.TE;
         RF_to_Echo_ideal.p = [ 0; 0; 0 ]; % no crusher here ...
         
-        Echo_to_RF_ideal.mu = 2;
+        Echo_to_RF_ideal.lambda = 2;
         Echo_to_RF_ideal.tau = par.TR - par.TE;
         Echo_to_RF_ideal.p = [ p_cru; 0; 0 ]; % ... but after the echo
         
     elseif ( isequal( par.ssfp, 'balanced' ) )
 
-        RF_to_Echo_ideal.mu = 1; % unique index
+        RF_to_Echo_ideal.lambda = 1; % unique index
         RF_to_Echo_ideal.tau = par.TR / 2; % for balanced SSFP, we consider a centered echo 
         RF_to_Echo_ideal.p = [ 0; 0; 0 ]; % no crusher
         
@@ -241,7 +240,7 @@ while ( true )
     % ... separated by small time intervals of constant duration and gradient moment
 
     DeltaTime = [];
-    DeltaTime.mu = 1;
+    DeltaTime.lambda = 1;
     DeltaTime.tau = par.t_rf / par.supp_rf;
     
     % the associated gradient moment is defined by RF bandwidth, pulse shape and slice thickness:
@@ -265,17 +264,17 @@ while ( true )
     
     if ( isequal( par.ssfp, 'unbalanced' ) )
         
-        RF_to_Echo_real.mu = 2; % unique index
+        RF_to_Echo_real.lambda = 2; % unique index
         RF_to_Echo_real.tau = par.TE - par.t_rf / 2;
         RF_to_Echo_real.p = [ 0; 0; - p_sl / 2 ];
         
-        Echo_to_RF_real.mu = 3;
+        Echo_to_RF_real.lambda = 3;
         Echo_to_RF_real.tau = par.TR - par.TE - par.t_rf / 2;
         Echo_to_RF_real.p = [ p_cru; 0; - p_sl / 2 ];
         
     elseif ( isequal( par.ssfp, 'balanced' ) )
         
-        RF_to_Echo_real.mu = 2; % unique index
+        RF_to_Echo_real.lambda = 2; % unique index
         RF_to_Echo_real.tau = ( par.TR - par.t_rf ) / 2; % for balanced SSFP, we consider a centered echo
         RF_to_Echo_real.p = [ 0; 0; - p_sl / 2 ];
         
@@ -343,7 +342,7 @@ while ( true )
             % since the signal from nonzero orders is (hopefully) dephased 
             
             select_conf = [];
-            select_conf.b_n = cm_ideal.find( Echo_to_RF_ideal.mu, 0 );
+            select_conf.b_n = cm_ideal.find( Echo_to_RF_ideal.lambda, 0 );
             
         elseif ( isequal( par.ssfp, 'balanced' ) )
             
@@ -400,7 +399,7 @@ while ( true )
             % since the signal from nonzero orders is (hopefully) dephased 
             
             select_conf = [];
-            select_conf.b_n = cm_real.find( Echo_to_RF_real.mu, 0 );
+            select_conf.b_n = cm_real.find( Echo_to_RF_real.lambda, 0 );
                                     
         elseif ( isequal( par.ssfp, 'balanced' ) )
             

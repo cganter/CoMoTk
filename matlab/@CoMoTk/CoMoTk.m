@@ -65,7 +65,7 @@ classdef CoMoTk < matlab.mixin.Copyable
         %% multiple tissues
         % relative weight
         
-        pd;
+        mu;
         
         % delta omega (due to chemical shift)
         
@@ -74,6 +74,10 @@ classdef CoMoTk < matlab.mixin.Copyable
         % R2^\prime
         
         R2p;                                                             % [ 1 / ms ]
+        
+        % transition rates
+        
+        k;                                                               % [ 1 / ms ]
         
         %% measurement conditions
         % relative B1
@@ -94,7 +98,7 @@ classdef CoMoTk < matlab.mixin.Copyable
         
         options_priv = struct( ...
             'alloc_d', 1, ...                                            % dimension of configuration model
-            'alloc_n', 1000, ...                                         % number of occupied states
+            'alloc_n', 10000, ...                                         % number of occupied states
             'epsilon', 0, ...                                         % discard configuration vectors with a squared norm smaller than this
             'rapid_meltdown', true, ...                            % should be faster, but requires more memory
             'verbose', false, ...                                      % various status messages
@@ -114,14 +118,14 @@ classdef CoMoTk < matlab.mixin.Copyable
         
         m = [];                                                            % configuration vector
         
-        b_mu = [];                                                         % occupied dimensions
+        b_lambda = [];                                                         % occupied dimensions
         b_n = [];                                                          % occupied configurations (total)
         
-        mu = [];                                                           % indices of dimensions
+        lambda = [];                                                           % indices of dimensions
         n = [];                                                            % configuration orders in each dimension
         
         n_tissues = 0;		                                               % number of tissues
-        d = 0;                                                             % == sum( cm.b_mu ) : dimension of configuration model
+        d = 0;                                                             % == sum( cm.b_lambda ) : dimension of configuration model
         n_conf = 0;                                                        % == sum( cm.b_n ) : occupied configurations (including n == 0)
         null_idx = 1;                                                      % index, corresponding to n == 0 (remains untouched)
         
@@ -129,7 +133,6 @@ classdef CoMoTk < matlab.mixin.Copyable
         % general properties
         
         diffusion = CoMoTk.No_Diff;
-        coupling = false;
         
         % cf. dependent counterparts
         
@@ -140,9 +143,10 @@ classdef CoMoTk < matlab.mixin.Copyable
         %% optional tissue properties and measurement conditions
         % cf. dependent counterparts
         
-        pd_priv = 1;
+        mu_priv = 1;
         dom_priv = 0;
         R2p_priv = 0;
+        k_priv = [];
         B1_priv = 1;
         
         %% sequence properties
@@ -302,7 +306,7 @@ classdef CoMoTk < matlab.mixin.Copyable
             if ( cm.n_tissues == 0 )
                 
                 cm.n_tissues = length( R1 );
-                cm.pd = ones( 1, cm.n_tissues );
+                cm.mu = ones( 1, cm.n_tissues );
                 cm.dom = zeros( cm.n_tissues, 1 );
                 
             elseif ( length( R1 ) ~= cm.n_tissues )
@@ -338,7 +342,7 @@ classdef CoMoTk < matlab.mixin.Copyable
             if ( cm.n_tissues == 0 )
                 
                 cm.n_tissues = length( R2 );
-                cm.pd = ones( 1, cm.n_tissues );
+                cm.mu = ones( 1, cm.n_tissues );
                 cm.dom = zeros( cm.n_tissues, 1 );
                 
             elseif ( length( R2 ) ~= cm.n_tissues )
@@ -392,7 +396,7 @@ classdef CoMoTk < matlab.mixin.Copyable
             if ( cm.n_tissues == 0 )
                 
                 cm.n_tissues = n_tis;
-                cm.pd = ones( 1, cm.n_tissues );
+                cm.mu = ones( 1, cm.n_tissues );
                 cm.dom = zeros( cm.n_tissues, 1 );
                 
             elseif ( n_tis ~= cm.n_tissues )
@@ -461,7 +465,7 @@ classdef CoMoTk < matlab.mixin.Copyable
         % (relative) proton density of complex tissues
         % (default == 1)
         
-        function set.pd ( cm, pd )
+        function set.mu ( cm, mu )
             
             if ( ~isempty( cm.m ) )
                 
@@ -471,21 +475,21 @@ classdef CoMoTk < matlab.mixin.Copyable
             
             if ( cm.n_tissues == 0 )
                 
-                cm.n_tissues = length( pd );
+                cm.n_tissues = length( mu );
                 
-            elseif ( length( pd ) ~= cm.n_tissues )
+            elseif ( length( mu ) ~= cm.n_tissues )
                 
-                error( 'length( pd ) must be equal to number of tissues.' );
+                error( 'length( mu ) must be equal to number of tissues.' );
                 
             end
             
-            cm.pd_priv = reshape( pd, [ 1, cm.n_tissues ] );
+            cm.mu_priv = reshape( mu, [ 1, cm.n_tissues ] );
             
         end
         
-        function res = get.pd ( cm )
+        function res = get.mu ( cm )
             
-            res = cm.pd_priv;
+            res = cm.mu_priv;
             
         end
         
@@ -523,14 +527,22 @@ classdef CoMoTk < matlab.mixin.Copyable
                 
                 cm.n_tissues = length( R2p );
                 
-            elseif ( length( R2p ) ~= cm.n_tissues )
+            elseif ( length( R2p ) ~= cm.n_tissues && length( R2p ) ~= 1 )
                 
-                error( 'length( R2p ) must be equal to number of tissues.' );
+                error( 'length( R2p ) must be equal to the number of tissues or one.' );
                 
             end
             
-            cm.R2p_priv = reshape( R2p, [ cm.n_tissues, 1 ] );
+            if ( length( R2p ) == cm.n_tissues )
             
+                cm.R2p_priv = reshape( R2p, [ cm.n_tissues, 1 ] );
+            
+            else
+                
+                cm.R2p_priv = repmat( R2p, [ cm.n_tissues, 1 ] );
+                
+            end
+                
             if ( max( abs( R2p ) ) > 0 )
             
                 cm.inhomogeneous_decay = @cm.lorentz_decay;
@@ -542,6 +554,50 @@ classdef CoMoTk < matlab.mixin.Copyable
         function res = get.R2p ( cm )
             
             res = cm.R2p_priv;
+            
+        end
+        
+        function set.k ( cm, k )
+            
+            if ( cm.n_tissues == 0 )
+                
+                error( 'initialize tissues before setting the transition rates');
+                
+            end 
+            
+            sz_k = size( k );
+            
+            if ( length( sz_k ) ~= 2 || sz_k( 1 ) ~= cm.n_tissues || sz_k( 2 ) ~= cm.n_tissues )
+                
+                error( 'size( k ) ~= [ n_tissues, n_tissues ].' );
+                
+            end
+            
+            cm.k_priv = k;
+            
+            % establish sum rule (particle conservation)
+
+            for j = 1 : cm.n_tissues
+                
+                cm.k_priv( j, j ) = 0;
+                
+                for i = 1 : cm.n_tissues
+                    
+                    if ( i ~= j )
+                        
+                        cm.k_priv( j, j ) = cm.k_priv( j, j ) - cm.k_priv( i, j );
+                        
+                    end
+                    
+                end
+                
+            end
+                
+        end
+        
+        function res = get.k( cm )
+            
+            res = cm.k_priv;
             
         end
         
@@ -581,10 +637,18 @@ classdef CoMoTk < matlab.mixin.Copyable
             
             cm.check_mandatory_parameters;
             
+            % no diffusion AND magnetization exchange
+            
+            if ( cm.diffusion ~= CoMoTk.No_Diff && ~isempty( cm.k ) )
+                
+                error( 'Diffusion AND magnetization exchange not supported.')
+                
+            end
+            
             if ( isempty( m ) )  % initialize with proton densities
                 
                 m = zeros( 3, cm.n_tissues );
-                m( 3, : ) = cm.pd;
+                m( 3, : ) = cm.mu;
                 
             elseif ( size( m, 1 ) ~= 3 || size( m, 2 ) ~= cm.n_tissues )
                 
@@ -611,10 +675,10 @@ classdef CoMoTk < matlab.mixin.Copyable
             
             % allocate space
             
-            cm.b_mu = false( 1, cm.alloc_d );
+            cm.b_lambda = false( 1, cm.alloc_d );
             cm.b_n = false( cm.alloc_n, 1 );
             
-            cm.mu = zeros( 1, cm.alloc_d );
+            cm.lambda = zeros( 1, cm.alloc_d );
             cm.n = zeros( cm.alloc_n, cm.alloc_d );
             
             cm.b_up_free = true( cm.alloc_n, cm.alloc_d );
@@ -810,7 +874,7 @@ classdef CoMoTk < matlab.mixin.Copyable
             %
             % IN
             %
-            % alpha    : flip angle [rad] (scalar)
+            % param    : flip angle [rad] (scalar)
             % phase    : Phase of RF pulse [rad] (scalar)
             % varargin : optional ( tag, handle ) pairs
             %
@@ -906,150 +970,200 @@ classdef CoMoTk < matlab.mixin.Copyable
             RotMat( 3, 2 ) = - RotMat( 2, 1 );
             RotMat( 3, 3 ) = RotMat( 1, 1 );
             
-            %% calculate derivatives, if necessary
-            % This has to be done (at least for B1, FlipAngle and Phase) prior
-            % to updating the configuration vector cm.m itself.
-            % The rotation matrix does not depend on R1, R2, D, tau, p and s
-            % which simplifes the associated recursions.
-
-            % generally valid part of chain rule
+            % check for magnetization transfer (MT)
             
-            fn = fieldnames( cm.dim );
+            if ( isfield( param, 'MT_sat' ) )
             
-            for i = 1 : length( fn )
-                
-                X = fn{ i };
-                dX = [ 'd', X ];
-                
-                if ( cm.len.( dX ) > 0 )
-
-                    sz_tmp = [ 3, cm.n_tissues, cm.n_conf, cm.dim.( X ), cm.len.( dX ) ];
-
-                    % the following reshapes are required by the matrix multiplication
+                if ( length( param.MT_sat ) ~= cm.n_tissues )
                     
-                    cm.dm.( dX )( :, :, cm.b_n, :, : ) = ...
-                        reshape( ...
-                        RotMat * ...
-                        reshape( ...
-                        cm.dm.( dX )( :, :, cm.b_n, :, : ), ...
-                        [ 3, prod( sz_tmp( 2 : end ) ) ] ), ...
-                        sz_tmp );
+                    error( 'wrong size of saturation due to magnetization transfer' );
                     
                 end
                 
+                % a value > 0 is treated as a bound pool
+                
+                b_MT = param.MT_sat > 0;
+                
+            else
+                
+                b_MT = false( cm.n_tissues, 1 );
+                
             end
             
-            % specific parts, when the derivative of the rotation matrix is nonzero
+            n_MT = sum( b_MT );
             
-            % B1 derivative
-            
-            if ( cm.len.dB1 > 0 )
+            if ( n_MT > 0 )
                 
-                dc_al = - s_al * param.FlipAngle;
-                ds_al = c_al * param.FlipAngle;
+                % Note: derivatives not (yet) implemented in presence of MT
                 
-                % calculate the rotation matrix
+                if ( cm.n_tissues > n_MT ) % should be always the case..
                 
-                dRotMat_dB1 = zeros( 3 );
-                
-                dRotMat_dB1( 1, 1 ) = 0.5 * dc_al;
-                dRotMat_dB1( 1, 2 ) = - 1i * ds_al * ei_ph * CoMoTk.sqrt_0p5;
-                dRotMat_dB1( 1, 3 ) = - 0.5 * dc_al * ei_ph^2;
-                dRotMat_dB1( 2, 1 ) = - conj( dRotMat_dB1( 1, 2 ) );
-                dRotMat_dB1( 2, 2 ) = dc_al;
-                dRotMat_dB1( 2, 3 ) = - dRotMat_dB1( 1, 2 );
-                dRotMat_dB1( 3, 1 ) = conj( dRotMat_dB1( 1, 3 ) );
-                dRotMat_dB1( 3, 2 ) = - dRotMat_dB1( 2, 1 );
-                dRotMat_dB1( 3, 3 ) = dRotMat_dB1( 1, 1 );
+                    cm.m( :, ~b_MT, cm.b_n ) = ...
+                        reshape( ...
+                        RotMat * ...
+                        reshape( ...
+                        cm.m( :, ~b_MT, cm.b_n ), ...
+                        [ 3, ( cm.n_tissues - n_MT ) * cm.n_conf ] ), ...
+                        [ 3, ( cm.n_tissues - n_MT ), cm.n_conf ] );
+                    
+                end
+ 
+                % MT saturation affects only the longitudinal component
 
-                cm.dm.dB1( :, :, cm.b_n ) = cm.dm.dB1( :, :, cm.b_n ) + ...
+                cm.m( 2, b_MT, cm.b_n ) = ...
+                    reshape( param.MT_sat( b_MT ), [ 1, n_MT ] ) .* cm.m( 2, b_MT, cm.b_n );
+                
+                % since transverse magnetization is never generated, we
+                % don't need to set it to zero explicitly
+
+            else
+                
+                %% calculate derivatives, if necessary
+                % This has to be done (at least for B1, FlipAngle and Phase) prior
+                % to updating the configuration vector cm.m itself.
+                % The rotation matrix does not depend on R1, R2, D, tau, p and s
+                % which simplifes the associated recursions.
+                
+                % generally valid part of chain rule
+                
+                fn = fieldnames( cm.dim );
+                
+                for i = 1 : length( fn )
+                    
+                    X = fn{ i };
+                    dX = [ 'd', X ];
+                    
+                    if ( cm.len.( dX ) > 0 )
+                        
+                        sz_tmp = [ 3, cm.n_tissues, cm.n_conf, cm.dim.( X ), cm.len.( dX ) ];
+                        
+                        % the following reshapes are required by the matrix multiplication
+                        
+                        cm.dm.( dX )( :, :, cm.b_n, :, : ) = ...
+                            reshape( ...
+                            RotMat * ...
+                            reshape( ...
+                            cm.dm.( dX )( :, :, cm.b_n, :, : ), ...
+                            [ 3, prod( sz_tmp( 2 : end ) ) ] ), ...
+                            sz_tmp );
+                        
+                    end
+                    
+                end
+                
+                % specific parts, when the derivative of the rotation matrix is nonzero
+                
+                % B1 derivative
+                
+                if ( cm.len.dB1 > 0 )
+                    
+                    dc_al = - s_al * param.FlipAngle;
+                    ds_al = c_al * param.FlipAngle;
+                    
+                    % calculate the rotation matrix
+                    
+                    dRotMat_dB1 = zeros( 3 );
+                    
+                    dRotMat_dB1( 1, 1 ) = 0.5 * dc_al;
+                    dRotMat_dB1( 1, 2 ) = - 1i * ds_al * ei_ph * CoMoTk.sqrt_0p5;
+                    dRotMat_dB1( 1, 3 ) = - 0.5 * dc_al * ei_ph^2;
+                    dRotMat_dB1( 2, 1 ) = - conj( dRotMat_dB1( 1, 2 ) );
+                    dRotMat_dB1( 2, 2 ) = dc_al;
+                    dRotMat_dB1( 2, 3 ) = - dRotMat_dB1( 1, 2 );
+                    dRotMat_dB1( 3, 1 ) = conj( dRotMat_dB1( 1, 3 ) );
+                    dRotMat_dB1( 3, 2 ) = - dRotMat_dB1( 2, 1 );
+                    dRotMat_dB1( 3, 3 ) = dRotMat_dB1( 1, 1 );
+                    
+                    cm.dm.dB1( :, :, cm.b_n ) = cm.dm.dB1( :, :, cm.b_n ) + ...
+                        reshape( ...
+                        dRotMat_dB1 * ...
+                        reshape( ...
+                        cm.m( :, :, cm.b_n ), ...
+                        [ 3, cm.n_tissues * cm.n_conf ] ), ...
+                        [ 3, cm.n_tissues, cm.n_conf ] );
+                    
+                end
+                
+                % FlipAngle derivative(s)
+                
+                if ( cm.len.dFlipAngle > 0 )
+                    
+                    [ ~, i ] = find( cm.dFlipAngle == handle_FlipAngle );
+                    
+                    if ( ~isempty( i ) )
+                        
+                        dc_al = - s_al * cm.B1;
+                        ds_al = c_al * cm.B1;
+                        
+                        % calculate the rotation matrix
+                        
+                        dRotMat_dFlipAngle = zeros( 3 );
+                        
+                        dRotMat_dFlipAngle( 1, 1 ) = 0.5 * dc_al;
+                        dRotMat_dFlipAngle( 1, 2 ) = - 1i * ds_al * ei_ph * CoMoTk.sqrt_0p5;
+                        dRotMat_dFlipAngle( 1, 3 ) = - 0.5 * dc_al * ei_ph^2;
+                        dRotMat_dFlipAngle( 2, 1 ) = - conj( dRotMat_dFlipAngle( 1, 2 ) );
+                        dRotMat_dFlipAngle( 2, 2 ) = dc_al;
+                        dRotMat_dFlipAngle( 2, 3 ) = - dRotMat_dFlipAngle( 1, 2 );
+                        dRotMat_dFlipAngle( 3, 1 ) = conj( dRotMat_dFlipAngle( 1, 3 ) );
+                        dRotMat_dFlipAngle( 3, 2 ) = - dRotMat_dFlipAngle( 2, 1 );
+                        dRotMat_dFlipAngle( 3, 3 ) = dRotMat_dFlipAngle( 1, 1 );
+                        
+                        cm.dm.dFlipAngle( :, :, cm.b_n, 1, i ) = cm.dm.dFlipAngle( :, :, cm.b_n, 1, i ) + ...
+                            reshape( ...
+                            dRotMat_dFlipAngle * ...
+                            reshape( ...
+                            cm.m( :, :, cm.b_n ), ...
+                            [ 3, cm.n_tissues * cm.n_conf ] ), ...
+                            [ 3, cm.n_tissues, cm.n_conf ] );
+                        
+                    end
+                    
+                end
+                
+                % Phase derivative(s)
+                
+                if ( cm.len.dPhase > 0 )
+                    
+                    [ ~, i ] = find( cm.dPhase == handle_Phase );
+                    
+                    if ( ~isempty( i ) )
+                        
+                        % calculate the rotation matrix
+                        
+                        dRotMat_dPhase = zeros( 3 );
+                        
+                        dRotMat_dPhase( 1, 2 ) = 1i * RotMat( 1, 2 );
+                        dRotMat_dPhase( 1, 3 ) = 2 * 1i * RotMat( 1, 3 );
+                        dRotMat_dPhase( 2, 1 ) = - conj( dRotMat_dPhase( 1, 2 ) );
+                        dRotMat_dPhase( 2, 3 ) = - dRotMat_dPhase( 1, 2 );
+                        dRotMat_dPhase( 3, 1 ) = conj( dRotMat_dPhase( 1, 3 ) );
+                        dRotMat_dPhase( 3, 2 ) = - dRotMat_dPhase( 2, 1 );
+                        
+                        cm.dm.dPhase( :, :, cm.b_n, 1, i ) = cm.dm.dPhase( :, :, cm.b_n, 1, i ) + ...
+                            reshape( ...
+                            dRotMat_dPhase * ...
+                            reshape( ...
+                            cm.m( :, :, cm.b_n ), ...
+                            [ 3, cm.n_tissues * cm.n_conf ] ), ...
+                            [ 3, cm.n_tissues, cm.n_conf ] );
+                        
+                    end
+                    
+                end
+            
+                %% finally we update the configuration cm.m
+                
+                cm.m( :, :, cm.b_n ) = ...
                     reshape( ...
-                    dRotMat_dB1 * ...
+                    RotMat * ...
                     reshape( ...
                     cm.m( :, :, cm.b_n ), ...
                     [ 3, cm.n_tissues * cm.n_conf ] ), ...
                     [ 3, cm.n_tissues, cm.n_conf ] );
-                
-            end
-            
-            % FlipAngle derivative(s)
-            
-            if ( cm.len.dFlipAngle > 0 )
-                
-                [ ~, i ] = find( cm.dFlipAngle == handle_FlipAngle );
-                
-                if ( ~isempty( i ) )
-                    
-                    dc_al = - s_al * cm.B1;
-                    ds_al = c_al * cm.B1;
-                    
-                    % calculate the rotation matrix
-                    
-                    dRotMat_dFlipAngle = zeros( 3 );
-                    
-                    dRotMat_dFlipAngle( 1, 1 ) = 0.5 * dc_al;
-                    dRotMat_dFlipAngle( 1, 2 ) = - 1i * ds_al * ei_ph * CoMoTk.sqrt_0p5;
-                    dRotMat_dFlipAngle( 1, 3 ) = - 0.5 * dc_al * ei_ph^2;
-                    dRotMat_dFlipAngle( 2, 1 ) = - conj( dRotMat_dFlipAngle( 1, 2 ) );
-                    dRotMat_dFlipAngle( 2, 2 ) = dc_al;
-                    dRotMat_dFlipAngle( 2, 3 ) = - dRotMat_dFlipAngle( 1, 2 );
-                    dRotMat_dFlipAngle( 3, 1 ) = conj( dRotMat_dFlipAngle( 1, 3 ) );
-                    dRotMat_dFlipAngle( 3, 2 ) = - dRotMat_dFlipAngle( 2, 1 );
-                    dRotMat_dFlipAngle( 3, 3 ) = dRotMat_dFlipAngle( 1, 1 );
-                    
-                    cm.dm.dFlipAngle( :, :, cm.b_n, 1, i ) = cm.dm.dFlipAngle( :, :, cm.b_n, 1, i ) + ...
-                        reshape( ...
-                        dRotMat_dFlipAngle * ...
-                        reshape( ...
-                        cm.m( :, :, cm.b_n ), ...
-                        [ 3, cm.n_tissues * cm.n_conf ] ), ...
-                        [ 3, cm.n_tissues, cm.n_conf ] );
-                    
-                end
-                
-            end
-            
-            % Phase derivative(s)
-            
-            if ( cm.len.dPhase > 0 )
-                
-                [ ~, i ] = find( cm.dPhase == handle_Phase );
-                
-                if ( ~isempty( i ) )
-                    
-                    % calculate the rotation matrix
-                    
-                    dRotMat_dPhase = zeros( 3 );
-                    
-                    dRotMat_dPhase( 1, 2 ) = 1i * RotMat( 1, 2 );
-                    dRotMat_dPhase( 1, 3 ) = 2 * 1i * RotMat( 1, 3 );
-                    dRotMat_dPhase( 2, 1 ) = - conj( dRotMat_dPhase( 1, 2 ) );
-                    dRotMat_dPhase( 2, 3 ) = - dRotMat_dPhase( 1, 2 );
-                    dRotMat_dPhase( 3, 1 ) = conj( dRotMat_dPhase( 1, 3 ) );
-                    dRotMat_dPhase( 3, 2 ) = - dRotMat_dPhase( 2, 1 );
-                    
-                    cm.dm.dPhase( :, :, cm.b_n, 1, i ) = cm.dm.dPhase( :, :, cm.b_n, 1, i ) + ...
-                        reshape( ...
-                        dRotMat_dPhase * ...
-                        reshape( ...
-                        cm.m( :, :, cm.b_n ), ...
-                        [ 3, cm.n_tissues * cm.n_conf ] ), ...
-                        [ 3, cm.n_tissues, cm.n_conf ] );
-                    
-                end
-                
+
             end
                         
-            %% finally we update the configuration cm.m
-            
-            cm.m( :, :, cm.b_n ) = ...
-                reshape( ...
-                RotMat * ...
-                reshape( ...
-                cm.m( :, :, cm.b_n ), ...
-                [ 3, cm.n_tissues * cm.n_conf ] ), ...
-                [ 3, cm.n_tissues, cm.n_conf ] );
-            
         end
         
         function b_is_ok = time ( cm, param )
@@ -1072,9 +1186,9 @@ classdef CoMoTk < matlab.mixin.Copyable
             
             % check for minimal information
             
-            if ( ~isfield( param, 'mu' ) )
+            if ( ~isfield( param, 'lambda' ) )
                 
-                error( 'No ''mu'' supplied.' );
+                error( 'No ''lambda'' supplied.' );
                 
             end
 
@@ -1087,7 +1201,7 @@ classdef CoMoTk < matlab.mixin.Copyable
                 
             end
             
-            [ idx_time, b_n_new, b_up_free_time, b_do_free_time ] = cm.pre_time( param.mu );
+            [ idx_time, b_n_new, b_up_free_time, b_do_free_time ] = cm.pre_time( param.lambda );
             
             if ( cm.options.debug && ~cm.check_state( 'after pre_time' ) )
                 
@@ -1100,12 +1214,12 @@ classdef CoMoTk < matlab.mixin.Copyable
             
             % is interval called for the first time?
             
-            b_new_mu = ~cm.b_tau( idx_time );
+            b_new_lambda = ~cm.b_tau( idx_time );
 
             % check for required gradient information in first call of time()
             
             if ( ...
-                    b_new_mu && ...
+                    b_new_lambda && ...
                     cm.diffusion ~= CoMoTk.No_Diff && ...
                     ~isfield( param, 'p' ) )
                 
@@ -1117,7 +1231,7 @@ classdef CoMoTk < matlab.mixin.Copyable
             
             if ( isfield( param, 'tau' ) )
                 
-                if ( b_new_mu )
+                if ( b_new_lambda )
                     
                     cm.b_tau( idx_time ) = true;
                     cm.tau( idx_time ) = param.tau;
@@ -1128,7 +1242,7 @@ classdef CoMoTk < matlab.mixin.Copyable
                     
                 end
                 
-            elseif ( b_new_mu )
+            elseif ( b_new_lambda )
                 
                 error( 'Missing duration in first call of ''time''.' );
 
@@ -1138,7 +1252,7 @@ classdef CoMoTk < matlab.mixin.Copyable
             
             if ( isfield( param, 'p' ) )
                 
-                if ( b_new_mu )
+                if ( b_new_lambda )
                     
                     cm.b_p( idx_time ) = true;
                     cm.p( :, idx_time ) = param.p;
@@ -1157,18 +1271,18 @@ classdef CoMoTk < matlab.mixin.Copyable
             
             if ( cm.diffusion ~= CoMoTk.No_Diff )
                 
-                % gradient shape (ignored, in absense of diffusion)
+                % gradient shape (ignored, in absence of diffusion)
                 
                 if ( isfield( param, 's' ) )
                     
-                    if ( ~b_new_mu && ...
+                    if ( ~b_new_lambda && ...
                             max( abs( cm.s( :, idx_time ) - param.s( : ) ) ) > 10 * eps )
                         
                         % Derivatives with respect to s make only sense for those intervals,
                         % for which the shape is not variable.
                         % This is checked by the following statement.
                         
-                        [ ~, i_ ] = find( cm.ds == param.mu );
+                        [ ~, i_ ] = find( cm.ds == param.lambda );
                         
                         if ( ~isempty( i_ ) )
                             
@@ -1184,7 +1298,7 @@ classdef CoMoTk < matlab.mixin.Copyable
                     
                     cm.s( :, idx_time ) = param.s( : );
                     
-                elseif ( b_new_mu )
+                elseif ( b_new_lambda )
                     
                     cm.s( :, idx_time ) = cm.p( :, idx_time );
                     
@@ -1213,14 +1327,14 @@ classdef CoMoTk < matlab.mixin.Copyable
                         
                     end
                     
-                    if ( ~b_new_mu && ...
+                    if ( ~b_new_lambda && ...
                             max( abs( cm.S( :, idx_time ) - S_vec( : ) ) ) > 10 * eps )
                         
                         % Derivatives with respect to s make only sense for those intervals,
                         % for which the shape is not variable.
                         % This is checked by the following statement.
                         
-                        [ ~, i_ ] = find( cm.dS == param.mu );
+                        [ ~, i_ ] = find( cm.dS == param.lambda );
                         
                         if ( ~isempty( i_ ) )
                             
@@ -1236,7 +1350,7 @@ classdef CoMoTk < matlab.mixin.Copyable
 
                     cm.S( :, idx_time ) = S_vec( : );
                     
-                elseif ( b_new_mu )
+                elseif ( b_new_lambda )
                     
                     S_vec = zeros( cm.dim.S, 1 );
                     
@@ -1271,299 +1385,408 @@ classdef CoMoTk < matlab.mixin.Copyable
             
             cm.update_relaxation( idx_time );
             
-            %% calculate recursive update of derivatives, if necessary
-            % At least for R1, R2, D, tau, p and s, this has to be done prior
-            % to updating the configuration vector cm.m itself.
-            % The recursion coefficients do not depend on B1, FlipAngle and Phase
-            % which simplifes the associated recursions.
-
-            % generally valid part of chain rule
+            % chemical shift
             
-            fn = fieldnames( cm.dim );
-            
-            for i = 1 : length( fn )
+            cs_tau = reshape( exp( - 1i .* cm.dom .* cm.tau( idx_time ) ), [ 1, cm.n_tissues ] );
                 
-                X = fn{ i };
-                dX = [ 'd', X ];
+            if ( isempty( cm.k ) )              % no magnetization exchange
                 
-                if ( cm.len.( dX ) > 0 )
-
-                    if ( cm.diffusion == CoMoTk.No_Diff )
-                        
-                        cm.dm.( dX )( 1, :, cm.idx_up( cm.b_n, idx_time ), :, : ) = ...
-                            cm.E( 2, :, idx_time ) .* ...
-                            cm.dm.( dX )( 1, :, cm.b_n, :, : );
-                        
-                        cm.dm.( dX )( 2, :, cm.b_n, :, : ) = ...
-                            cm.E( 1, :, idx_time ) .* ...
-                            cm.dm.( dX )( 2, :, cm.b_n, :, : );
-                        
-                        cm.dm.( dX )( 3, :, cm.idx_do( cm.b_n, idx_time ), :, : ) = ...
-                            cm.E( 2, :, idx_time ) .* ...
-                            cm.dm.( dX )( 3, :, cm.b_n, :, : );
-                        
-                    else
-                        
-                        cm.dm.( dX )( 1, :, cm.idx_up( cm.b_n, idx_time ), :, : ) = ...
-                            cm.En( 1, :, cm.b_n, idx_time ) .* ...
-                            cm.dm.( dX )( 1, :, cm.b_n, :, : );
-                        
-                        cm.dm.( dX )( 2, :, cm.b_n, :, : ) = ...
-                            cm.En( 2, :, cm.b_n, idx_time ) .* ...
-                            cm.dm.( dX )( 2, :, cm.b_n, :, : );
-                        
-                        cm.dm.( dX )( 3, :, cm.idx_do( cm.b_n, idx_time ), :, : ) = ...
-                            cm.En( 3, :, cm.b_n, idx_time ) .* ...
-                            cm.dm.( dX )( 3, :, cm.b_n, :, : );
-                        
-                    end
+                %% calculate recursive update of derivatives, if necessary
+                % At least for R1, R2, D, tau, p and s, this has to be done prior
+                % to updating the configuration vector cm.m itself.
+                % The recursion coefficients do not depend on B1, FlipAngle and Phase
+                % which simplifes the associated recursions.
                 
-                    % cleanup of free transverse configurations
+                % generally valid part of chain rule
+                
+                fn = fieldnames( cm.dim );
+                
+                for i = 1 : length( fn )
                     
-                    cm.dm.( dX )( 1, :, b_do_free_time, :, : ) = 0;
-                    cm.dm.( dX )( 3, :, b_up_free_time, :, : ) = 0;
-
-                end
-                
-            end
-
-            % specific parts, when the derivative of the damping matrix and/or the recovery term is nonzero
-
-            % R1 derivative(s)
-
-            if ( cm.len.dR1 > 0 )
-            
-                for i = 1 : cm.len.dR1
+                    X = fn{ i };
+                    dX = [ 'd', X ];
                     
-                    if ( cm.diffusion == CoMoTk.No_Diff )
+                    if ( cm.len.( dX ) > 0 )
                         
-                        cm.dm.dR1( 2, cm.dR1( i ), cm.b_n, 1, i ) = ...
-                            cm.dm.dR1( 2, cm.dR1( i ), cm.b_n, 1, i ) - ...
-                            cm.tau( idx_time ) .* cm.E( 1, cm.dR1( i ), idx_time ) .* cm.m( 2, cm.dR1( i ), cm.b_n );
+                        if ( cm.diffusion == CoMoTk.No_Diff )
+                            
+                            cm.dm.( dX )( 1, :, cm.idx_up( cm.b_n, idx_time ), :, : ) = ...
+                                cm.E( 2, :, idx_time ) .* ...
+                                cm.dm.( dX )( 1, :, cm.b_n, :, : );
+                            
+                            cm.dm.( dX )( 2, :, cm.b_n, :, : ) = ...
+                                cm.E( 1, :, idx_time ) .* ...
+                                cm.dm.( dX )( 2, :, cm.b_n, :, : );
+                            
+                            cm.dm.( dX )( 3, :, cm.idx_do( cm.b_n, idx_time ), :, : ) = ...
+                                cm.E( 2, :, idx_time ) .* ...
+                                cm.dm.( dX )( 3, :, cm.b_n, :, : );
+                            
+                        else
+                            
+                            cm.dm.( dX )( 1, :, cm.idx_up( cm.b_n, idx_time ), :, : ) = ...
+                                cm.En( 1, :, cm.b_n, idx_time ) .* ...
+                                cm.dm.( dX )( 1, :, cm.b_n, :, : );
+                            
+                            cm.dm.( dX )( 2, :, cm.b_n, :, : ) = ...
+                                cm.En( 2, :, cm.b_n, idx_time ) .* ...
+                                cm.dm.( dX )( 2, :, cm.b_n, :, : );
+                            
+                            cm.dm.( dX )( 3, :, cm.idx_do( cm.b_n, idx_time ), :, : ) = ...
+                                cm.En( 3, :, cm.b_n, idx_time ) .* ...
+                                cm.dm.( dX )( 3, :, cm.b_n, :, : );
+                            
+                        end
                         
-                    else
+                        % cleanup of free transverse configurations
                         
-                        cm.dm.dR1( 2, cm.dR1( i ), cm.b_n, 1, i ) = ...
-                            cm.dm.dR1( 2, cm.dR1( i ), cm.b_n, 1, i ) - ...
-                            cm.tau( idx_time ) .* cm.En( 2, cm.dR1( i ), cm.b_n, idx_time ) .* cm.m( 2, cm.dR1( i ), cm.b_n ); ...
+                        cm.dm.( dX )( 1, :, b_do_free_time, :, : ) = 0;
+                        cm.dm.( dX )( 3, :, b_up_free_time, :, : ) = 0;
                         
                     end
                     
-                    cm.dm.dR1( 2, cm.dR1( i ), cm.null_idx, 1, i ) = ...
-                        cm.dm.dR1( 2, cm.dR1( i ), cm.null_idx, 1, i ) + ...
-                        cm.pd( cm.dR1( i ) ) .* cm.tau( idx_time ) .* cm.E( 1, cm.dR1( i ), idx_time );
-                    
                 end
                 
-            end
+                % specific parts, when the derivative of the damping matrix and/or the recovery term is nonzero
                 
-            % R2 derivative(s)
-            
-            if ( cm.len.dR2 > 0 )
+                % R1 derivative(s)
                 
-                for i = 1 : cm.len.dR2
+                if ( cm.len.dR1 > 0 )
                     
-                    if ( cm.diffusion == CoMoTk.No_Diff )
+                    for i = 1 : cm.len.dR1
                         
-                        cm.dm.dR2( 1, cm.dR2( i ), cm.idx_up( cm.b_n, idx_time ), 1, i ) = ...
-                            cm.dm.dR2( 1, cm.dR2( i ), cm.idx_up( cm.b_n, idx_time ), 1, i ) - ...
-                            cm.tau( idx_time ) .* cm.E( 2, cm.dR2( i ), idx_time ) .* cm.m( 1, cm.dR2( i ), cm.b_n );
+                        if ( cm.diffusion == CoMoTk.No_Diff )
+                            
+                            cm.dm.dR1( 2, cm.dR1( i ), cm.b_n, 1, i ) = ...
+                                cm.dm.dR1( 2, cm.dR1( i ), cm.b_n, 1, i ) - ...
+                                cm.tau( idx_time ) .* cm.E( 1, cm.dR1( i ), idx_time ) .* cm.m( 2, cm.dR1( i ), cm.b_n );
+                            
+                        else
+                            
+                            cm.dm.dR1( 2, cm.dR1( i ), cm.b_n, 1, i ) = ...
+                                cm.dm.dR1( 2, cm.dR1( i ), cm.b_n, 1, i ) - ...
+                                cm.tau( idx_time ) .* cm.En( 2, cm.dR1( i ), cm.b_n, idx_time ) .* cm.m( 2, cm.dR1( i ), cm.b_n ); ...
+                                
+                        end
                         
-                        cm.dm.dR2( 3, cm.dR2( i ), cm.idx_do( cm.b_n, idx_time ), 1, i ) = ...
-                            cm.dm.dR2( 3, cm.dR2( i ), cm.idx_do( cm.b_n, idx_time ), 1, i ) - ...
-                            cm.tau( idx_time ) .* cm.E( 2, cm.dR2( i ), idx_time ) .* cm.m( 3, cm.dR2( i ), cm.b_n );
-                        
-                    else
-                        
-                        cm.dm.dR2( 1, cm.dR2( i ), cm.idx_up( cm.b_n, idx_time ), 1, i ) = ...
-                            cm.dm.dR2( 1, cm.dR2( i ), cm.idx_up( cm.b_n, idx_time ), 1, i ) - ...
-                            cm.tau( idx_time ) .* cm.En( 1, cm.dR2( i ), cm.b_n, idx_time ) .* cm.m( 1, cm.dR2( i ), cm.b_n );
-                        
-                        cm.dm.dR2( 3, cm.dR2( i ), cm.idx_do( cm.b_n, idx_time ), 1, i ) = ...
-                            cm.dm.dR2( 3, cm.dR2( i ), cm.idx_do( cm.b_n, idx_time ), 1, i ) - ...
-                            cm.tau( idx_time ) .* cm.En( 3, cm.dR2( i ), cm.b_n, idx_time ) .* cm.m( 3, cm.dR2( i ), cm.b_n );
+                        cm.dm.dR1( 2, cm.dR1( i ), cm.null_idx, 1, i ) = ...
+                            cm.dm.dR1( 2, cm.dR1( i ), cm.null_idx, 1, i ) + ...
+                            cm.mu( cm.dR1( i ) ) .* cm.tau( idx_time ) .* cm.E( 1, cm.dR1( i ), idx_time );
                         
                     end
-                                        
-                end
-                
-            end
-            
-            % D derivative(s)
-            
-            if ( cm.len.dD > 0 )
-                
-                for i = 1 : cm.len.dD
-                    
-                    cm.dm.dD( 1, cm.dD( i ), cm.idx_up( cm.b_n, idx_time ), :, i ) = ...
-                        cm.dm.dD( 1, cm.dD( i ), cm.idx_up( cm.b_n, idx_time ), :, i ) + ...
-                        cm.dEn_exp_dD( 1, 1, cm.b_n, :, idx_time ) .* ...
-                        cm.En( 1, cm.dD( i ), cm.b_n, idx_time ) .* ...
-                        cm.m( 1, cm.dD( i ), cm.b_n );
-                    
-                    cm.dm.dD( 2, cm.dD( i ), cm.b_n, :, i ) = ...
-                        cm.dm.dD( 2, cm.dD( i ), cm.b_n, :, i ) + ...
-                        cm.dEn_exp_dD( 2, 1, cm.b_n, :, idx_time ) .* ...
-                        cm.En( 2, cm.dD( i ), cm.b_n, idx_time ) .* ...
-                        cm.m( 2, cm.dD( i ), cm.b_n );
-                    
-                    cm.dm.dD( 3, cm.dD( i ), cm.idx_do( cm.b_n, idx_time ), :, i ) = ...
-                        cm.dm.dD( 3, cm.dD( i ), cm.idx_do( cm.b_n, idx_time ), :, i ) + ...
-                        cm.dEn_exp_dD( 3, 1, cm.b_n, :, idx_time ) .* ...
-                        cm.En( 3, cm.dD( i ), cm.b_n, idx_time ) .* ...
-                        cm.m( 3, cm.dD( i ), cm.b_n );
                     
                 end
                 
-            end
-            
-            % tau derivative(s)
+                % R2 derivative(s)
+                
+                if ( cm.len.dR2 > 0 )
+                    
+                    for i = 1 : cm.len.dR2
+                        
+                        if ( cm.diffusion == CoMoTk.No_Diff )
+                            
+                            cm.dm.dR2( 1, cm.dR2( i ), cm.idx_up( cm.b_n, idx_time ), 1, i ) = ...
+                                cm.dm.dR2( 1, cm.dR2( i ), cm.idx_up( cm.b_n, idx_time ), 1, i ) - ...
+                                cm.tau( idx_time ) .* cs_tau .* cm.E( 2, cm.dR2( i ), idx_time ) .* cm.m( 1, cm.dR2( i ), cm.b_n );
+                            
+                            cm.dm.dR2( 3, cm.dR2( i ), cm.idx_do( cm.b_n, idx_time ), 1, i ) = ...
+                                cm.dm.dR2( 3, cm.dR2( i ), cm.idx_do( cm.b_n, idx_time ), 1, i ) - ...
+                                cm.tau( idx_time ) .* conj( cs_tau ) .* cm.E( 2, cm.dR2( i ), idx_time ) .* cm.m( 3, cm.dR2( i ), cm.b_n );
+                            
+                        else
+                            
+                            cm.dm.dR2( 1, cm.dR2( i ), cm.idx_up( cm.b_n, idx_time ), 1, i ) = ...
+                                cm.dm.dR2( 1, cm.dR2( i ), cm.idx_up( cm.b_n, idx_time ), 1, i ) - ...
+                                cm.tau( idx_time ) .* cs_tau .* cm.En( 1, cm.dR2( i ), cm.b_n, idx_time ) .* cm.m( 1, cm.dR2( i ), cm.b_n );
+                            
+                            cm.dm.dR2( 3, cm.dR2( i ), cm.idx_do( cm.b_n, idx_time ), 1, i ) = ...
+                                cm.dm.dR2( 3, cm.dR2( i ), cm.idx_do( cm.b_n, idx_time ), 1, i ) - ...
+                                cm.tau( idx_time ) .* conj( cs_tau ) .* cm.En( 3, cm.dR2( i ), cm.b_n, idx_time ) .* cm.m( 3, cm.dR2( i ), cm.b_n );
+                            
+                        end
+                        
+                    end
+                    
+                end
+                
+                % D derivative(s)
+                
+                if ( cm.len.dD > 0 )
+                    
+                    for i = 1 : cm.len.dD
+                        
+                        cm.dm.dD( 1, cm.dD( i ), cm.idx_up( cm.b_n, idx_time ), :, i ) = ...
+                            cm.dm.dD( 1, cm.dD( i ), cm.idx_up( cm.b_n, idx_time ), :, i ) + ...
+                            cs_tau .* ...
+                            cm.dEn_exp_dD( 1, 1, cm.b_n, :, idx_time ) .* ...
+                            cm.En( 1, cm.dD( i ), cm.b_n, idx_time ) .* ...
+                            cm.m( 1, cm.dD( i ), cm.b_n );
+                        
+                        cm.dm.dD( 2, cm.dD( i ), cm.b_n, :, i ) = ...
+                            cm.dm.dD( 2, cm.dD( i ), cm.b_n, :, i ) + ...
+                            cm.dEn_exp_dD( 2, 1, cm.b_n, :, idx_time ) .* ...
+                            cm.En( 2, cm.dD( i ), cm.b_n, idx_time ) .* ...
+                            cm.m( 2, cm.dD( i ), cm.b_n );
+                        
+                        cm.dm.dD( 3, cm.dD( i ), cm.idx_do( cm.b_n, idx_time ), :, i ) = ...
+                            cm.dm.dD( 3, cm.dD( i ), cm.idx_do( cm.b_n, idx_time ), :, i ) + ...
+                            conj( cs_tau ) .* ...
+                            cm.dEn_exp_dD( 3, 1, cm.b_n, :, idx_time ) .* ...
+                            cm.En( 3, cm.dD( i ), cm.b_n, idx_time ) .* ...
+                            cm.m( 3, cm.dD( i ), cm.b_n );
+                        
+                    end
+                    
+                end
+                
+                % tau derivative(s)
+                
+                if ( cm.len.dtau > 0 )
+                    
+                    [ ~, i ] = find( cm.dtau == param.lambda );
+                    
+                    if ( ~isempty( i ) )
+                        
+                        if ( cm.diffusion == CoMoTk.No_Diff )
+                            
+                            cm.dm.dtau( 1, :, cm.idx_up( cm.b_n, idx_time ), 1, i ) = ...
+                                cm.dm.dtau( 1, :, cm.idx_up( cm.b_n, idx_time ), 1, i ) - ...
+                                cm.R2 .* cs_tau .* cm.E( 2, :, idx_time ) .* cm.m( 1, :, cm.b_n );
+                            
+                            cm.dm.dtau( 2, :, cm.b_n, 1, i ) = ...
+                                cm.dm.dtau( 2, :, cm.b_n, 1, i ) - ...
+                                cm.R1 .* cm.E( 1, :, idx_time ) .* cm.m( 2, :, cm.b_n );
+                            
+                            cm.dm.dtau( 3, :, cm.idx_do( cm.b_n, idx_time ), 1, i ) = ...
+                                cm.dm.dtau( 3, :, cm.idx_do( cm.b_n, idx_time ), 1, i ) - ...
+                                cm.R2 .* conj( cs_tau ) .* cm.E( 2, :, idx_time ) .* cm.m( 3, :, cm.b_n );
+                            
+                        else
+                            
+                            cm.dm.dtau( 1, :, cm.idx_up( cm.b_n, idx_time ), 1, i ) = ...
+                                cm.dm.dtau( 1, :, cm.idx_up( cm.b_n, idx_time ), 1, i ) + ...
+                                ( cm.dEn_exp_dtau( 1, :, cm.b_n, 1, i ) - cm.R2 ) .* ...
+                                cs_tau .* cm.En( 1, :, cm.b_n, idx_time ) .* cm.m( 1, :, cm.b_n );
+                            
+                            cm.dm.dtau( 2, :, cm.b_n, 1, i ) = ...
+                                cm.dm.dtau( 2, :, cm.b_n, 1, i ) + ...
+                                ( cm.dEn_exp_dtau( 2, :, cm.b_n, 1, i ) - cm.R1 ).* ...
+                                cm.En( 2, :, cm.b_n, idx_time ) .* cm.m( 2, :, cm.b_n );
+                            
+                            cm.dm.dtau( 3, :, cm.idx_do( cm.b_n, idx_time ), 1, i ) = ...
+                                cm.dm.dtau( 3, :, cm.idx_do( cm.b_n, idx_time ), 1, i ) + ...
+                                ( cm.dEn_exp_dtau( 3, :, cm.b_n, 1, i ) - cm.R2 ) .* ...
+                                conj( cs_tau ) .* cm.En( 3, :, cm.b_n, idx_time ) .* cm.m( 3, :, cm.b_n );
+                            
+                        end
+                        
+                        cm.dm.dtau( 2, :, cm.null_idx, 1, i ) = cm.dm.dtau( 2, :, cm.null_idx, 1, i ) + ...
+                            cm.mu .* cm.R1 .* cm.E( 1, :, idx_time );
+                        
+                    end
+                    
+                end
+                
+                % p derivative(s)
+                
+                if ( cm.len.dp > 0 )
+                    
+                    cm.dm.dp( 1, :, cm.idx_up( cm.b_n, idx_time ), :, : ) = ...
+                        cm.dm.dp( 1, :, cm.idx_up( cm.b_n, idx_time ), :, : ) + ...
+                        cs_tau .* ...
+                        cm.dEn_exp_dp( 1, :, cm.b_n, :, :, idx_time ) .* ...
+                        cm.En( 1, :, cm.b_n, idx_time ) .* ...
+                        cm.m( 1, :, cm.b_n );
+                    
+                    cm.dm.dp( 2, :, cm.b_n, :, : ) = ...
+                        cm.dm.dp( 2, :, cm.b_n, :, : ) + ...
+                        cm.dEn_exp_dp( 2, :, cm.b_n, :, :, idx_time ) .* ...
+                        cm.En( 2, :, cm.b_n, idx_time ) .* ...
+                        cm.m( 2, :, cm.b_n );
+                    
+                    cm.dm.dp( 3, :, cm.idx_do( cm.b_n, idx_time ), :, : ) = ...
+                        cm.dm.dp( 3, :, cm.idx_do( cm.b_n, idx_time ), :, : ) + ...
+                        conj( cs_tau ) .* cm.dEn_exp_dp( 3, :, cm.b_n, :, :, idx_time ) .* ...
+                        cm.En( 3, :, cm.b_n, idx_time ) .* ...
+                        cm.m( 3, :, cm.b_n );
+                    
+                end
+                
+                % s derivative(s)
+                
+                if ( cm.len.ds > 0 )
+                    
+                    [ ~, i ] = find( cm.ds == param.lambda );
+                    
+                    if ( ~isempty( i ) )
+                        
+                        cm.dm.ds( 1, :, cm.idx_up( cm.b_n, idx_time ), :, i ) = ...
+                            cm.dm.ds( 1, :, cm.idx_up( cm.b_n, idx_time ), :, i ) + ...
+                            cs_tau .* cm.dEn_exp_ds( 1, :, cm.b_n, :, i ) .* cm.En( 1, :, cm.b_n, idx_time ) .* cm.m( 1, :, cm.b_n );
+                        
+                        cm.dm.ds( 3, :, cm.idx_do( cm.b_n, idx_time ), :, i ) = ...
+                            cm.dm.ds( 3, :, cm.idx_do( cm.b_n, idx_time ), :, i ) - ...
+                            conj( cs_tau ) .* cm.dEn_exp_ds( 1, :, cm.b_n, :, i ) .* cm.En( 3, :, cm.b_n, idx_time ) .* cm.m( 3, :, cm.b_n );
+                        
+                    end
+                    
+                end
+                
+                % S derivative(s)
+                
+                if ( cm.len.dS > 0 )
+                    
+                    [ ~, i ] = find( cm.dS == param.lambda );
+                    
+                    if ( ~isempty( i ) )
+                        
+                        cm.dm.dS( 1, :, cm.idx_up( cm.b_n, idx_time ), :, i ) = ...
+                            cm.dm.dS( 1, :, cm.idx_up( cm.b_n, idx_time ), :, i ) + ...
+                            cs_tau .* cm.dEn_exp_dS( 1, :, 1, :, i ) .* cm.En( 1, :, cm.b_n, idx_time ) .* cm.m( 1, :, cm.b_n );
+                        
+                        cm.dm.dS( 3, :, cm.idx_do( cm.b_n, idx_time ), :, i ) = ...
+                            cm.dm.dS( 3, :, cm.idx_do( cm.b_n, idx_time ), :, i ) + ...
+                            conj( cs_tau ) .* cm.dEn_exp_dS( 1, :, 1, :, i ) .* cm.En( 3, :, cm.b_n, idx_time ) .* cm.m( 3, :, cm.b_n );
+                        
+                    end
+                    
+                end
+                
+                %% finally we update the configuration cm.m
+                
+                % relaxation
+                
+                if ( cm.diffusion == CoMoTk.No_Diff )
+                    
+                    cm.m( 1, :, cm.idx_up( cm.b_n, idx_time ) ) = ...
+                        cs_tau .* cm.E( 2, :, idx_time ) .* cm.m( 1, :, cm.b_n );
+                    
+                    cm.m( 2, :, cm.b_n ) = ...
+                        cm.E( 1, :, idx_time ) .* cm.m( 2, :, cm.b_n );
+                    
+                    cm.m( 3, :, cm.idx_do( cm.b_n, idx_time ) ) = ...
+                        conj( cs_tau ) .* cm.E( 2, :, idx_time ) .* cm.m( 3, :, cm.b_n );
+                    
+                else
+                    
+                    cm.m( 1, :, cm.idx_up( cm.b_n, idx_time ) ) = ...
+                        cs_tau .* cm.En( 1, :, cm.b_n, idx_time ) .* cm.m( 1, :, cm.b_n );
+                    
+                    cm.m( 2, :, cm.b_n ) = ...
+                        cm.En( 2, :, cm.b_n, idx_time ) .* cm.m( 2, :, cm.b_n );
+                    
+                    cm.m( 3, :, cm.idx_do( cm.b_n, idx_time ) ) = ...
+                        conj( cs_tau ) .* cm.En( 3, :, cm.b_n, idx_time ) .* cm.m( 3, :, cm.b_n );
+                    
+                end
+                
+                cm.m( 1, :, b_do_free_time ) = 0;
+                cm.m( 3, :, b_up_free_time ) = 0;
+                
+                % repolarization (here, the relative proton densities come into play)
+                
+                cm.m( 2, :, cm.null_idx ) = cm.m( 2, :, cm.null_idx ) + cm.mu .* ( 1 - cm.E( 1, :, idx_time ) );
+                
+            else                              % with magnetization exchange
 
-            if ( cm.len.dtau > 0 )
+                %% finally we update the configuration cm.m
+                % prep exchange matrices
                 
-                [ ~, i ] = find( cm.dtau == param.mu );
+                b_inf_R2 = isinf( cm.R2 );
                 
-                if ( ~isempty( i ) )
+                if ( any( b_inf_R2 ) ) 
                     
-                    if ( cm.diffusion == CoMoTk.No_Diff )
+                    % In case of MT, there is no coupling of transverse
+                    % magnetization to bound pool(s).
+                    %
+                    % For the (rare?) case than there is more than one
+                    % mobile compartment, we allow for coupling between
+                    % them, though. To this end, we define a transition matrix
+                    % for the free compartments only and modify the sum
+                    % rule accordingly (otherwise the diagonal elements
+                    % would leak into the bound pool, which is usually
+                    % assumed as uncoupled with respect to the transverse
+                    % magnetization).
+                    %
+                    % NOTE: 
+                    % Use with care, since I am not sure, whether this
+                    % approach is sound.
+                    
+                    k_ = cm.k;
+                    
+                    % eliminate coupling to bound pool(s)
+                    
+                    k_( :, b_inf_R2 ) = 0;
+                    k_( b_inf_R2, : ) = 0;
+                    
+                    % modify sum rule for transverse components
+                    
+                    for j = 1 : cm.n_tissues
                         
-                        cm.dm.dtau( 1, :, cm.idx_up( cm.b_n, idx_time ), 1, i ) = ...
-                            cm.dm.dtau( 1, :, cm.idx_up( cm.b_n, idx_time ), 1, i ) - ...
-                            cm.R2 .* cm.E( 2, :, idx_time ) .* cm.m( 1, :, cm.b_n );
+                        k_( j, j ) = 0;
                         
-                        cm.dm.dtau( 2, :, cm.b_n, 1, i ) = ...
-                            cm.dm.dtau( 2, :, cm.b_n, 1, i ) - ...
-                            cm.R1 .* cm.E( 1, :, idx_time ) .* cm.m( 2, :, cm.b_n );
-                        
-                        cm.dm.dtau( 3, :, cm.idx_do( cm.b_n, idx_time ), 1, i ) = ...
-                            cm.dm.dtau( 3, :, cm.idx_do( cm.b_n, idx_time ), 1, i ) - ...
-                            cm.R2 .* cm.E( 2, :, idx_time ) .* cm.m( 3, :, cm.b_n );
-                        
-                    else
-                        
-                        cm.dm.dtau( 1, :, cm.idx_up( cm.b_n, idx_time ), 1, i ) = ...
-                            cm.dm.dtau( 1, :, cm.idx_up( cm.b_n, idx_time ), 1, i ) + ...
-                            ( cm.dEn_exp_dtau( 1, :, cm.b_n, 1, i ) - cm.R2 ) .* ...
-                            cm.En( 1, :, cm.b_n, idx_time ) .* cm.m( 1, :, cm.b_n );
-                        
-                        cm.dm.dtau( 2, :, cm.b_n, 1, i ) = ...
-                            cm.dm.dtau( 2, :, cm.b_n, 1, i ) + ...
-                            ( cm.dEn_exp_dtau( 2, :, cm.b_n, 1, i ) - cm.R1 ).* ...
-                            cm.En( 2, :, cm.b_n, idx_time ) .* cm.m( 2, :, cm.b_n );                            
-                        
-                        cm.dm.dtau( 3, :, cm.idx_do( cm.b_n, idx_time ), 1, i ) = ...
-                            cm.dm.dtau( 3, :, cm.idx_do( cm.b_n, idx_time ), 1, i ) + ...
-                            ( cm.dEn_exp_dtau( 3, :, cm.b_n, 1, i ) - cm.R2 ) .* ...
-                            cm.En( 3, :, cm.b_n, idx_time ) .* cm.m( 3, :, cm.b_n );
+                        for i = 1 : cm.n_tissues
+                            
+                            if ( i ~= j )
+                                
+                                k_( j, j ) = k_( j, j ) - k_( i, j );
+                                
+                            end
+                            
+                        end
                         
                     end
+
+                    Y_1 = k_ - diag( 1i .* cm.dom( : ) + cm.R2( : ) );
                     
-                    cm.dm.dtau( 2, :, cm.null_idx, 1, i ) = cm.dm.dtau( 2, :, cm.null_idx, 1, i ) + ...
-                        cm.pd .* cm.R1 .* cm.E( 1, :, idx_time );
+                    Y_1( :, b_inf_R2 ) = 0;
+                    Y_1( b_inf_R2, : ) = 0;
                     
+                else
+                    
+                    Y_1 = cm.k - diag( 1i .* cm.dom( : ) + cm.R2( : ) );
+
                 end
                 
-            end
-            
-            % p derivative(s)
-            
-            if ( cm.len.dp > 0 )
+                Y_0 = cm.k - diag( cm.R1( : ) );
+
+                exp_Y_tau_1 = expm( Y_1 .* cm.tau( idx_time ) );
+                exp_Y_tau_0 = expm( Y_0 .* cm.tau( idx_time ) );
+
+                y = cm.R1( : ) .* cm.mu( : );
                 
-                cm.dm.dp( 1, :, cm.idx_up( cm.b_n, idx_time ), :, : ) = ...
-                    cm.dm.dp( 1, :, cm.idx_up( cm.b_n, idx_time ), :, : ) + ...
-                    cm.dEn_exp_dp( 1, :, cm.b_n, :, :, idx_time ) .* ...
-                    cm.En( 1, :, cm.b_n, idx_time ) .* ...
-                    cm.m( 1, :, cm.b_n );
-                
-                cm.dm.dp( 2, :, cm.b_n, :, : ) = ...
-                    cm.dm.dp( 2, :, cm.b_n, :, : ) + ...
-                    cm.dEn_exp_dp( 2, :, cm.b_n, :, :, idx_time ) .* ...
-                    cm.En( 2, :, cm.b_n, idx_time ) .* ...
-                    cm.m( 2, :, cm.b_n );
-                
-                cm.dm.dp( 3, :, cm.idx_do( cm.b_n, idx_time ), :, : ) = ...
-                    cm.dm.dp( 3, :, cm.idx_do( cm.b_n, idx_time ), :, : ) + ...
-                    cm.dEn_exp_dp( 3, :, cm.b_n, :, :, idx_time ) .* ... 
-                    cm.En( 3, :, cm.b_n, idx_time ) .* ...
-                    cm.m( 3, :, cm.b_n );
-                
-            end
-            
-            % s derivative(s)
-            
-            if ( cm.len.ds > 0 )
-                
-                [ ~, i ] = find( cm.ds == param.mu );
-                
-                if ( ~isempty( i ) )
-                    
-                    cm.dm.ds( 1, :, cm.idx_up( cm.b_n, idx_time ), :, i ) = ...
-                        cm.dm.ds( 1, :, cm.idx_up( cm.b_n, idx_time ), :, i ) + ...
-                        cm.dEn_exp_ds( 1, :, cm.b_n, :, i ) .* cm.En( 1, :, cm.b_n, idx_time ) .* cm.m( 1, :, cm.b_n );
-                    
-                    cm.dm.ds( 3, :, cm.idx_do( cm.b_n, idx_time ), :, i ) = ...
-                        cm.dm.ds( 3, :, cm.idx_do( cm.b_n, idx_time ), :, i ) - ...
-                        cm.dEn_exp_ds( 1, :, cm.b_n, :, i ) .* cm.En( 3, :, cm.b_n, idx_time ) .* cm.m( 3, :, cm.b_n );
-                    
-                end
-                
-            end
-            
-            % S derivative(s)
-            
-            if ( cm.len.dS > 0 )
-                
-                [ ~, i ] = find( cm.dS == param.mu );
-                
-                if ( ~isempty( i ) )
-                    
-                    cm.dm.dS( 1, :, cm.idx_up( cm.b_n, idx_time ), :, i ) = ...
-                        cm.dm.dS( 1, :, cm.idx_up( cm.b_n, idx_time ), :, i ) + ...
-                        cm.dEn_exp_dS( 1, :, 1, :, i ) .* cm.En( 1, :, cm.b_n, idx_time ) .* cm.m( 1, :, cm.b_n );
-                    
-                    cm.dm.dS( 3, :, cm.idx_do( cm.b_n, idx_time ), :, i ) = ...
-                        cm.dm.dS( 3, :, cm.idx_do( cm.b_n, idx_time ), :, i ) + ...
-                        cm.dEn_exp_dS( 1, :, 1, :, i ) .* cm.En( 3, :, cm.b_n, idx_time ) .* cm.m( 3, :, cm.b_n );
-                    
-                end
-                
-            end
-            
-            %% finally we update the configuration cm.m
-            
-            % relaxation
-            
-            if ( cm.diffusion == CoMoTk.No_Diff )
+                % relaxation
                 
                 cm.m( 1, :, cm.idx_up( cm.b_n, idx_time ) ) = ...
-                    cm.E( 2, :, idx_time ) .* cm.m( 1, :, cm.b_n );
+                    exp_Y_tau_1 * ...
+                    reshape( ...
+                    cm.m( 1, :, cm.b_n ), ...
+                    [ cm.n_tissues, cm.n_conf ] );
                 
-                cm.m( 2, :, cm.b_n ) = ...
-                    cm.E( 1, :, idx_time ) .* cm.m( 2, :, cm.b_n );
-                
-                cm.m( 3, :, cm.idx_do( cm.b_n, idx_time ) ) = ...
-                    cm.E( 2, :, idx_time ) .* cm.m( 3, :, cm.b_n );
-                
-            else
-                
-                cm.m( 1, :, cm.idx_up( cm.b_n, idx_time ) ) = ...
-                    cm.En( 1, :, cm.b_n, idx_time ) .* cm.m( 1, :, cm.b_n );
-                
-                cm.m( 2, :, cm.b_n ) = ...
-                    cm.En( 2, :, cm.b_n, idx_time ) .* cm.m( 2, :, cm.b_n );
+                cm.m( 2, :, cm.b_n ) = ...7
+                    exp_Y_tau_0 * ...
+                    reshape( ...
+                    cm.m( 2, :, cm.b_n ), ...
+                    [ cm.n_tissues, cm.n_conf ] );
                 
                 cm.m( 3, :, cm.idx_do( cm.b_n, idx_time ) ) = ...
-                    cm.En( 3, :, cm.b_n, idx_time ) .* cm.m( 3, :, cm.b_n );
+                    conj( exp_Y_tau_1 ) * ...
+                    reshape( ...
+                    cm.m( 3, :, cm.b_n ), ...
+                    [ cm.n_tissues, cm.n_conf ] );
+                
+                cm.m( 1, :, b_do_free_time ) = 0;
+                cm.m( 3, :, b_up_free_time ) = 0;
+                
+                % repolarization (here, the relative proton densities come into play)
+                
+                cm.m( 2, :, cm.null_idx ) = cm.m( 2, :, cm.null_idx ) - ...
+                    reshape( ...
+                    Y_0 \ ( ( eye( cm.n_tissues ) - exp_Y_tau_0 ) * y ), ...
+                    [ 1, cm.n_tissues ] );
                 
             end
             
-            cm.m( 1, :, b_do_free_time ) = 0;
-            cm.m( 3, :, b_up_free_time ) = 0;
-                
-            % repolarization (here, the relative proton densities come into play)
-            
-            cm.m( 2, :, cm.null_idx ) = cm.m( 2, :, cm.null_idx ) + cm.pd .* ( 1 - cm.E( 1, :, idx_time ) );
-                        
             % perform final bookkeeping                        
             
             cm.post_time( b_n_new );
@@ -1575,12 +1798,6 @@ classdef CoMoTk < matlab.mixin.Copyable
                 
             end
            
-            % J-coupling and/or magnetization transfer/exchange
-            
-            if ( cm.coupling )
-                
-            end
-            
             % remove negligible configurations
             
             if( ~cm.meltdown )
@@ -1618,47 +1835,47 @@ classdef CoMoTk < matlab.mixin.Copyable
         
         %% get results
         
-        function b_n = find ( cm, mu, n )
+        function b_n = find ( cm, lambda, n )
             
-            if ( length( mu ) ~= length( n ) )
+            if ( length( lambda ) ~= length( n ) )
                 
-                error( 'mu and n must have same length.' );
+                error( 'lambda and n must have same length.' );
                 
             end
             
-            % check, which of the supplied mu are actually alive (i.e. stored)
+            % check, which of the supplied lambda are actually alive (i.e. stored)
             
-            b_mu_2d = cm.b_mu & ( mu( : ) == cm.mu );  % size( b_mu_2d ) == [ length( mu ), cm.alloc_d ]
+            b_lambda_2d = cm.b_lambda & ( lambda( : ) == cm.lambda );  % size( b_lambda_2d ) == [ length( lambda ), cm.alloc_d ]
             
-            % non-existing mu must not have non-zero configuration orders
+            % non-existing lambda must not have non-zero configuration orders
             
-            b_mu_found = any( b_mu_2d, 2 );            % size( b_mu_found ) == [ length( mu ), 1 ]
+            b_lambda_found = any( b_lambda_2d, 2 );            % size( b_lambda_found ) == [ length( lambda ), 1 ]
             
-            if ( any( n( ~b_mu_found ) ) )
+            if ( any( n( ~b_lambda_found ) ) )
                 
                 b_n = [];
                 return;
                 
             end
 
-            % n == 0 is always true for not (yet) occupied time index mu
+            % n == 0 is always true for not (yet) occupied time index lambda
             
-            if ( sum( ~b_mu_found ) > 0 )
+            if ( sum( ~b_lambda_found ) > 0 )
 
                 b_n = cm.b_n;
                 return;
                 
             end
             
-            n_mu_found = sum( b_mu_found );
+            n_lambda_found = sum( b_lambda_found );
             
             % for the rest, determine the indices in storage
             
-            [ idx_mu, ~ ] = find( b_mu_2d' );
+            [ idx_lambda, ~ ] = find( b_lambda_2d' );
             
             % we can now determine b_n
             
-            b_n = cm.b_n & any( cm.n( :, idx_mu ) == reshape( n( b_mu_found ), [ 1, n_mu_found ] ), 2 );
+            b_n = cm.b_n & any( cm.n( :, idx_lambda ) == reshape( n( b_lambda_found ), [ 1, n_lambda_found ] ), 2 );
             
         end
         
@@ -1695,7 +1912,8 @@ classdef CoMoTk < matlab.mixin.Copyable
             
             % off-resonance and chemical shift (if applicable )
             
-            w_n_ = exp( 1i .* ( omega_ + cm.dom ) .* reshape( cm.tau_n( b_n_ ), [ 1, n_c ] ) );
+%            w_n_ = exp( - 1i .* ( omega_ + cm.dom ) .* reshape( cm.tau_n( b_n_ ), [ 1, n_c ] ) );
+            w_n_ = exp( - 1i .* omega_ .* reshape( cm.tau_n( b_n_ ), [ 1, n_c ] ) );
             
             % *= gradient effects (optional)
             
@@ -1764,7 +1982,7 @@ classdef CoMoTk < matlab.mixin.Copyable
         
         function res = lorentz_decay ( cm, tau )
            
-            res = exp( - cm.R2p .* reshape( tau, [ 1, length( tau ) ] ) );
+            res = exp( - cm.R2p .* reshape( abs( tau ), [ 1, length( tau ) ] ) );
             
         end
         
@@ -1796,8 +2014,8 @@ classdef CoMoTk < matlab.mixin.Copyable
                 cm.log.b_n{ cm.log.count } = cm.b_n;
                 cm.log.n{ cm.log.count } = cm.n;
                 
-                cm.log.b_mu{ cm.log.count } = cm.b_mu;
-                cm.log.mu{ cm.log.count } = cm.mu;
+                cm.log.b_lambda{ cm.log.count } = cm.b_lambda;
+                cm.log.lambda{ cm.log.count } = cm.lambda;
                 
                 cm.log.b_up_free{ cm.log.count } = cm.b_up_free;
                 cm.log.b_do_free{ cm.log.count } = cm.b_do_free;
@@ -1809,8 +2027,8 @@ classdef CoMoTk < matlab.mixin.Copyable
             
             if ( cm.options.debug )
                 
-                b_up_occ = cm.b_n & ~cm.b_up_free & cm.b_mu;
-                b_do_occ = cm.b_n & ~cm.b_do_free & cm.b_mu;
+                b_up_occ = cm.b_n & ~cm.b_up_free & cm.b_lambda;
+                b_do_occ = cm.b_n & ~cm.b_do_free & cm.b_lambda;
                 
                 [ idx_up_occ, c_up ] = find( b_up_occ );
                 [ idx_do_occ, c_do ] = find( b_do_occ );
@@ -1900,7 +2118,7 @@ classdef CoMoTk < matlab.mixin.Copyable
             if ( n_todo > 0 )
                 
                 cm.tau_n( b_todo ) = ...
-                    sum( cm.n( b_todo, cm.b_mu ) .* reshape( cm.tau( cm.b_mu ), [ 1, cm.d ] ), 2 );
+                    sum( cm.n( b_todo, cm.b_lambda ) .* reshape( cm.tau( cm.b_lambda ), [ 1, cm.d ] ), 2 );
                 
                 cm.b_tau_n = cm.b_n;
                 
@@ -1916,8 +2134,8 @@ classdef CoMoTk < matlab.mixin.Copyable
             
             if ( n_todo > 0 )
                 
-                cm.p_n( :, b_todo ) = sum( reshape( cm.n( b_todo, cm.b_mu ), [ 1, n_todo, cm.d ] ) .* ...
-                    reshape( cm.p( :, cm.b_mu ), [ 3, 1, cm.d ] ), 3 );
+                cm.p_n( :, b_todo ) = sum( reshape( cm.n( b_todo, cm.b_lambda ), [ 1, n_todo, cm.d ] ) .* ...
+                    reshape( cm.p( :, cm.b_lambda ), [ 3, 1, cm.d ] ), 3 );
                 
                 cm.b_p_n = cm.b_n;
                 
@@ -1951,7 +2169,7 @@ classdef CoMoTk < matlab.mixin.Copyable
                 
                 if ( cm.len.dtau > 0 )
                     
-                    [ ~, i ] = find( cm.dtau == cm.mu( idx_time ) );
+                    [ ~, i ] = find( cm.dtau == cm.lambda( idx_time ) );
                     
                     if ( ~isempty( i ) )
                         
@@ -1963,7 +2181,7 @@ classdef CoMoTk < matlab.mixin.Copyable
 
                 for i = 1 : cm.len.dp
                     
-                    [ ~, i_ ] = find( cm.dp( i ) == cm.mu );
+                    [ ~, i_ ] = find( cm.dp( i ) == cm.lambda );
                     
                     if ( ~isempty( i_ ) )
 
@@ -1985,7 +2203,7 @@ classdef CoMoTk < matlab.mixin.Copyable
                 
                 if( cm.len.ds > 0 )
                     
-                    [ ~, i ] = find( cm.ds == cm.mu( idx_time ) );
+                    [ ~, i ] = find( cm.ds == cm.lambda( idx_time ) );
                     
                     if ( ~isempty( i ) )
                         
@@ -1999,7 +2217,7 @@ classdef CoMoTk < matlab.mixin.Copyable
                 
                 if ( cm.len.dS > 0 )
                     
-                    [ ~, i ] = find( cm.dS == cm.mu( idx_time ) );
+                    [ ~, i ] = find( cm.dS == cm.lambda( idx_time ) );
                     
                     if ( ~isempty( i ) )
 
@@ -2015,13 +2233,6 @@ classdef CoMoTk < matlab.mixin.Copyable
                 
             elseif ( cm.diffusion == CoMoTk.Tensor_Diff )
 
-                %                 cm.En_exp = zeros( 3, cm.n_tissues, cm.alloc_n, cm.alloc_d );
-                %                 cm.dEn_exp_dD = zeros( 3, 1, cm.alloc_n, cm.dim.D, cm.len.dD, cm.alloc_d );
-                %                 cm.dEn_exp_dtau = zeros( 3, cm.n_tissues, cm.alloc_n, 1, cm.len.dtau );
-                %                 cm.dEn_exp_dp = zeros( 3, cm.n_tissues, cm.alloc_n, 3, cm.len.dp, cm.alloc_d );
-                %                 cm.dEn_exp_ds = zeros( 1, cm.n_tissues, cm.alloc_n, 3, cm.len.ds );
-                %                 cm.dEn_exp_dS = zeros( 1, cm.n_tissues, cm.alloc_n, cm.dim.S, cm.len.dS );
-                
                 pnDpn = reshape( sum( sum( ...
                     reshape( cm.p_n( :, b_todo ), [ 3, 1, 1, n_todo ] ) .* ...
                     cm.D .* ...
@@ -2081,7 +2292,7 @@ classdef CoMoTk < matlab.mixin.Copyable
                 
                 if ( cm.len.dtau > 0 )
                     
-                    [ ~, i ] = find( cm.dtau == cm.mu( idx_time ) );
+                    [ ~, i ] = find( cm.dtau == cm.lambda( idx_time ) );
                     
                     if ( ~isempty( i ) )
                         
@@ -2093,7 +2304,7 @@ classdef CoMoTk < matlab.mixin.Copyable
 
                 for i = 1 : cm.len.dp
                     
-                    [ ~, i_ ] = find( cm.dp( i ) == cm.mu );
+                    [ ~, i_ ] = find( cm.dp( i ) == cm.lambda );
                     
                     if ( ~isempty( i_ ) )
                         
@@ -2117,7 +2328,7 @@ classdef CoMoTk < matlab.mixin.Copyable
 
                 if( cm.len.ds > 0 )
                     
-                    [ ~, i ] = find( cm.ds == cm.mu( idx_time ) );
+                    [ ~, i ] = find( cm.ds == cm.lambda( idx_time ) );
                     
                     if ( ~isempty( i ) )
                         
@@ -2134,7 +2345,7 @@ classdef CoMoTk < matlab.mixin.Copyable
 
                 if ( cm.len.dS > 0 )
                     
-                    [ ~, i ] = find( cm.dS == cm.mu( idx_time ) );
+                    [ ~, i ] = find( cm.dS == cm.lambda( idx_time ) );
                     
                     if ( ~isempty( i ) )
 
@@ -2206,7 +2417,7 @@ classdef CoMoTk < matlab.mixin.Copyable
             
         end
         
-        function [ idx_time, b_n_new, b_up_free_time, b_do_free_time ] = pre_time ( cm, mu )
+        function [ idx_time, b_n_new, b_up_free_time, b_do_free_time ] = pre_time ( cm, lambda )
             
             if ( cm.options.verbose )
                 
@@ -2217,7 +2428,7 @@ classdef CoMoTk < matlab.mixin.Copyable
             
             % is this a new time interval?
             
-            b_time = cm.b_mu & ( cm.mu == mu );
+            b_time = cm.b_lambda & ( cm.lambda == lambda );
             idx_time = find( b_time, 1, 'first' );
             
             if ( isempty( idx_time ) ) % new time index
@@ -2236,13 +2447,13 @@ classdef CoMoTk < matlab.mixin.Copyable
                 
                 % get the first free place
                 
-                idx_time = find( ~cm.b_mu, 1, 'first' );
+                idx_time = find( ~cm.b_lambda, 1, 'first' );
                 
                 % update logical indices amd set identifier
                 
                 b_time( idx_time ) = true;
-                cm.b_mu( idx_time ) = true;
-                cm.mu( idx_time ) = mu;
+                cm.b_lambda( idx_time ) = true;
+                cm.lambda( idx_time ) = lambda;
                 
                 % configuration order increases by one
                 
@@ -2300,7 +2511,7 @@ classdef CoMoTk < matlab.mixin.Copyable
             cm.idx_up_new( b_up_free_time ) = idx_free( 1 : num_up_new );
             cm.idx_do_new( b_do_free_time ) = idx_free( num_up_new + 1 : end );
             
-            %% bookkeeping for mu == handle_time
+            %% bookkeeping for lambda == handle_time
             
             % the extremal configurations have new successors
             
@@ -2318,23 +2529,23 @@ classdef CoMoTk < matlab.mixin.Copyable
             cm.n( cm.idx_up_new( b_up_free_time ), idx_time ) = cm.n( b_up_free_time, idx_time ) + 1;
             cm.n( cm.idx_do_new( b_do_free_time ), idx_time ) = cm.n( b_do_free_time, idx_time ) - 1;
             
-            %% bookkeeping for mu ~= handle_time
+            %% bookkeeping for lambda ~= handle_time
             
             % associated logical and actual indices
             
             sz_nd = [ cm.alloc_n, cm.alloc_d ];
             
-            b_other_mu = cm.b_mu & ~b_time;
+            b_other_lambda = cm.b_lambda & ~b_time;
             
-            b_up_up_o = b_up_free_time & ~cm.b_up_free & b_other_mu;
-            b_up_do_o = b_up_free_time & ~cm.b_do_free & b_other_mu;
-            b_do_up_o = b_do_free_time & ~cm.b_up_free & b_other_mu;
-            b_do_do_o = b_do_free_time & ~cm.b_do_free & b_other_mu;
+            b_up_up_o = b_up_free_time & ~cm.b_up_free & b_other_lambda;
+            b_up_do_o = b_up_free_time & ~cm.b_do_free & b_other_lambda;
+            b_do_up_o = b_do_free_time & ~cm.b_up_free & b_other_lambda;
+            b_do_do_o = b_do_free_time & ~cm.b_do_free & b_other_lambda;
             
-            b_up_up_f = b_up_free_time & cm.b_up_free & b_other_mu;
-            b_up_do_f = b_up_free_time & cm.b_do_free & b_other_mu;
-            b_do_up_f = b_do_free_time & cm.b_up_free & b_other_mu;
-            b_do_do_f = b_do_free_time & cm.b_do_free & b_other_mu;
+            b_up_up_f = b_up_free_time & cm.b_up_free & b_other_lambda;
+            b_up_do_f = b_up_free_time & cm.b_do_free & b_other_lambda;
+            b_do_up_f = b_do_free_time & cm.b_up_free & b_other_lambda;
+            b_do_do_f = b_do_free_time & cm.b_do_free & b_other_lambda;
             
             [ r, c ] = find( b_up_up_o );
             
@@ -2434,8 +2645,8 @@ classdef CoMoTk < matlab.mixin.Copyable
             
             % configuration order remains unchanged
             
-            cm.n( cm.idx_up_new( b_up_free_time ), b_other_mu ) = cm.n( b_up_free_time, b_other_mu );
-            cm.n( cm.idx_do_new( b_do_free_time ), b_other_mu ) = cm.n( b_do_free_time, b_other_mu );
+            cm.n( cm.idx_up_new( b_up_free_time ), b_other_lambda ) = cm.n( b_up_free_time, b_other_lambda );
+            cm.n( cm.idx_do_new( b_do_free_time ), b_other_lambda ) = cm.n( b_do_free_time, b_other_lambda );
             
             %% logical indices of new states
             
@@ -2504,19 +2715,21 @@ classdef CoMoTk < matlab.mixin.Copyable
             n_removed_tot = 0;
             n_cycles = 0;
             
+            % removal may require several iterations (from the boundary inwards)
+            
             while( true )
                 
                 %% candidates for removal:
-                % - occupied
-                % - not explicitly excluded
-                % - small
-                % - have an unoccupied neighbor in every direction
+                % (a) occupied
+                % (b) not explicitly excluded
+                % (c) small
+                % (d) have an unoccupied neighbor in every direction
                 
                 b_remove_n = ...
-                    cm.b_n & ...
-                    ~b_exclude_n & ...
-                    b_small & ...
-                    ( sum( cm.b_up_free( :, cm.b_mu ) | cm.b_do_free( :, cm.b_mu ), 2 ) == cm.d );
+                    cm.b_n & ...             % (a)
+                    ~b_exclude_n & ...       % (b)
+                    b_small & ...            % (c)
+                    ( sum( cm.b_up_free( :, cm.b_lambda ) | cm.b_do_free( :, cm.b_lambda ), 2 ) == cm.d );  % (d)
                 
                 n_remove = sum( b_remove_n );
                 
@@ -2541,22 +2754,22 @@ classdef CoMoTk < matlab.mixin.Copyable
                     % arise after removal of the configurations
 
                     idx_n = find( b_remove_n );
-                    idx_mu = find( cm.b_mu );
+                    idx_lambda = find( cm.b_lambda );
 
-                    b_up_occ = ~cm.b_up_free( b_remove_n, cm.b_mu );
-                    b_do_occ = ~cm.b_do_free( b_remove_n, cm.b_mu );
+                    b_up_occ = ~cm.b_up_free( b_remove_n, cm.b_lambda );
+                    b_do_occ = ~cm.b_do_free( b_remove_n, cm.b_lambda );
 
-                    idx_up_occ = cm.idx_up( b_remove_n, cm.b_mu );
-                    idx_do_occ = cm.idx_do( b_remove_n, cm.b_mu );
+                    idx_up_occ = cm.idx_up( b_remove_n, cm.b_lambda );
+                    idx_do_occ = cm.idx_do( b_remove_n, cm.b_lambda );
 
                     % up up
 
-                    mu_pairs = ...
-                        reshape( idx_mu, [ 1, cm.d ] ) > reshape( idx_mu, [ 1, 1, cm.d ] );
+                    lambda_pairs = ...
+                        reshape( idx_lambda, [ 1, cm.d ] ) > reshape( idx_lambda, [ 1, 1, cm.d ] );
                     
                     [ r_up_up, c_up_up ] = ...
                         find( reshape( ...
-                            b_up_occ & reshape( b_up_occ, [ n_remove, 1, cm.d ] ) & mu_pairs, ...
+                            b_up_occ & reshape( b_up_occ, [ n_remove, 1, cm.d ] ) & lambda_pairs, ...
                             [ n_remove, cm.d * cm.d ] ) );
 
                     [ i_up, j_up ] = ind2sub( [ cm.d, cm.d ], c_up_up );
@@ -2572,7 +2785,7 @@ classdef CoMoTk < matlab.mixin.Copyable
                             sub2ind( [ n_remove, cm.d ], ...
                             r_up_up( : ), ...
                             i_up( : ) ) ), sz_n_ ), ...
-                            reshape( idx_mu( j_up ), sz_n_ ) ) );
+                            reshape( idx_lambda( j_up ), sz_n_ ) ) );
                         
                         b_exclude_n( idx_n( r_up_up( b_free ) ) ) = true;
                         
@@ -2584,7 +2797,7 @@ classdef CoMoTk < matlab.mixin.Copyable
                             sub2ind( [ n_remove, cm.d ], ...
                             r_up_up( ~b_free), ...
                             i_up( ~b_free ) ) ), sz_n_ ), ...
-                            reshape( idx_mu( j_up( ~b_free ) ), sz_n_ ) ) ) ) = true;
+                            reshape( idx_lambda( j_up( ~b_free ) ), sz_n_ ) ) ) ) = true;
                         
                     end
                     
@@ -2592,7 +2805,7 @@ classdef CoMoTk < matlab.mixin.Copyable
                     
                     [ r_do_do, c_do_do ] = ...
                         find( reshape( ...
-                            b_do_occ & reshape( b_do_occ, [ n_remove, 1, cm.d ] ) & mu_pairs, ...
+                            b_do_occ & reshape( b_do_occ, [ n_remove, 1, cm.d ] ) & lambda_pairs, ...
                             [ n_remove, cm.d * cm.d ] ) );
 
                     [ i_do, j_do ] = ind2sub( [ cm.d, cm.d ], c_do_do );
@@ -2608,7 +2821,7 @@ classdef CoMoTk < matlab.mixin.Copyable
                             sub2ind( [ n_remove, cm.d ], ...
                             r_do_do( : ), ...
                             i_do( : ) ) ), sz_n_ ) , ...
-                            reshape( idx_mu( j_do ), sz_n_ )  ) );
+                            reshape( idx_lambda( j_do ), sz_n_ )  ) );
                         
                         b_exclude_n( idx_n( r_do_do( b_free ) ) ) = true;
 
@@ -2620,18 +2833,18 @@ classdef CoMoTk < matlab.mixin.Copyable
                             sub2ind( [ n_remove, cm.d ], ...
                             r_do_do( ~b_free), ...
                             i_do( ~b_free ) ) ), sz_n_ ) , ...
-                            reshape( idx_mu( j_do( ~b_free ) ), sz_n_ ) ) ) ) = true;
+                            reshape( idx_lambda( j_do( ~b_free ) ), sz_n_ ) ) ) ) = true;
                         
                     end
                              
                     % up do
                     
-                    mu_pairs = ...
-                        reshape( idx_mu, [ 1, cm.d ] ) ~= reshape( idx_mu, [ 1, 1, cm.d ] );
+                    lambda_pairs = ...
+                        reshape( idx_lambda, [ 1, cm.d ] ) ~= reshape( idx_lambda, [ 1, 1, cm.d ] );
                     
                     [ r_up_do, c_up_do ] = ...
                         find( reshape( ...
-                            b_up_occ & reshape( b_do_occ, [ n_remove, 1, cm.d ] ) & mu_pairs, ...
+                            b_up_occ & reshape( b_do_occ, [ n_remove, 1, cm.d ] ) & lambda_pairs, ...
                             [ n_remove, cm.d * cm.d ] ) );
 
                     [ i_up, j_do ] = ind2sub( [ cm.d, cm.d ], c_up_do );
@@ -2647,7 +2860,7 @@ classdef CoMoTk < matlab.mixin.Copyable
                             sub2ind( [ n_remove, cm.d ], ...
                             r_up_do( : ), ...
                             i_up( : ) ) ), sz_n_ ), ...
-                            reshape( idx_mu( j_do ), sz_n_ )  ) );
+                            reshape( idx_lambda( j_do ), sz_n_ )  ) );
                         
                         b_exclude_n( idx_n( r_up_do( b_free ) ) ) = true;
                         
@@ -2659,7 +2872,7 @@ classdef CoMoTk < matlab.mixin.Copyable
                             sub2ind( [ n_remove, cm.d ], ...
                             r_up_do( ~b_free), ...
                             i_up( ~b_free ) ) ), sz_n_ ) , ...
-                            reshape( idx_mu( j_do( ~b_free ) ), sz_n_ ) ) ) ) = true;
+                            reshape( idx_lambda( j_do( ~b_free ) ), sz_n_ ) ) ) ) = true;
                         
                     end
                     
@@ -2675,8 +2888,8 @@ classdef CoMoTk < matlab.mixin.Copyable
                     
                     % disconnect adjacent configurations
                     
-                    b_up_occ = b_remove_n & cm.b_mu & ~cm.b_up_free;
-                    b_do_occ = b_remove_n & cm.b_mu & ~cm.b_do_free;
+                    b_up_occ = b_remove_n & cm.b_lambda & ~cm.b_up_free;
+                    b_do_occ = b_remove_n & cm.b_lambda & ~cm.b_do_free;
                     
                     [ r_up_occ, c_up_occ ] = find( b_up_occ );
                     [ r_do_occ, c_do_occ ] = find( b_do_occ );
@@ -2694,7 +2907,7 @@ classdef CoMoTk < matlab.mixin.Copyable
 
                     if ( cm.diffusion ~= CoMoTk.No_Diff )
                         
-                        cm.b_En( b_remove_n, cm.b_mu ) = false;
+                        cm.b_En( b_remove_n, cm.b_lambda ) = false;
                         
                     end
 
@@ -2712,8 +2925,8 @@ classdef CoMoTk < matlab.mixin.Copyable
                         %          ---------
                         % arise after removal of the actual configuration r( i )
                         
-                        b_up_occ = cm.b_mu & ~cm.b_up_free( r( i ), : );
-                        b_do_occ = cm.b_mu & ~cm.b_do_free( r( i ), : );
+                        b_up_occ = cm.b_lambda & ~cm.b_up_free( r( i ), : );
+                        b_do_occ = cm.b_lambda & ~cm.b_do_free( r( i ), : );
                         
                         c_up_occ = find( b_up_occ );
                         c_do_occ = find( b_do_occ );
@@ -2765,15 +2978,15 @@ classdef CoMoTk < matlab.mixin.Copyable
                         
                         cm.b_up_free( sub2ind( sz_nd, idx_do_occ, c_do_occ ) ) = true;
                         cm.b_do_free( sub2ind( sz_nd, idx_up_occ, c_up_occ ) ) = true;
-                        cm.b_up_free( r( i ), cm.b_mu ) = true;
-                        cm.b_do_free( r( i ), cm.b_mu ) = true;
+                        cm.b_up_free( r( i ), cm.b_lambda ) = true;
+                        cm.b_do_free( r( i ), cm.b_lambda ) = true;
                         
                         cm.b_tau_n( r( i ) ) = false;
                         cm.b_p_n( r( i ) ) = false;
                         
                         if ( cm.diffusion ~= CoMoTk.No_Diff )
                         
-                            cm.b_En( r( i ), cm.b_mu ) = false;
+                            cm.b_En( r( i ), cm.b_lambda ) = false;
                             
                         end
                                              
@@ -2784,30 +2997,30 @@ classdef CoMoTk < matlab.mixin.Copyable
                 % dimensions without nonzero configurations are in fact
                 % nonexistent and can be removed
                 
-                b_remove_mu = cm.b_mu & ~any( cm.n( cm.b_n, : ) ~= 0 );
+                b_remove_lambda = cm.b_lambda & ~any( cm.n( cm.b_n, : ) ~= 0 );
                 
-                if ( any( b_remove_mu ) )
+                if ( any( b_remove_lambda ) )
                     
                     if ( cm.options.verbose )
                         
-                        fprintf( 1, 'meltdown: Remove %d dimensions.\n', sum( b_remove_mu ) );
+                        fprintf( 1, 'meltdown: Remove %d dimensions.\n', sum( b_remove_lambda ) );
                         
                     end
                     
-                    cm.b_mu( b_remove_mu ) = false;
-                    cm.d = sum( cm.b_mu );
+                    cm.b_lambda( b_remove_lambda ) = false;
+                    cm.d = sum( cm.b_lambda );
                     
-                    cm.b_up_free( :, b_remove_mu ) = true;
-                    cm.b_do_free( :, b_remove_mu ) = true;
+                    cm.b_up_free( :, b_remove_lambda ) = true;
+                    cm.b_do_free( :, b_remove_lambda ) = true;
                     
-                    cm.b_tau( b_remove_mu ) = false;
-                    cm.b_p( b_remove_mu ) = false;
+                    cm.b_tau( b_remove_lambda ) = false;
+                    cm.b_p( b_remove_lambda ) = false;
                     
-                    cm.b_E( b_remove_mu ) = false;
+                    cm.b_E( b_remove_lambda ) = false;
                     
                     if ( cm.diffusion ~= CoMoTk.No_Diff )
                         
-                        cm.b_En( :, b_remove_mu ) = false;
+                        cm.b_En( :, b_remove_lambda ) = false;
                         
                     end
                     
@@ -2945,8 +3158,8 @@ classdef CoMoTk < matlab.mixin.Copyable
             
             if ( ~isempty( rng_d ) )
                 
-                cm.b_mu( rng_d ) = false;
-                cm.mu( rng_d ) = 0;
+                cm.b_lambda( rng_d ) = false;
+                cm.lambda( rng_d ) = 0;
                 
                 cm.n( :, rng_d ) = 0;
                 

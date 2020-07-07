@@ -9,15 +9,15 @@ par = [];
 opt = [];
 str = [];
 
-par.T1 = 100;
+par.T1 = Inf;
 par.T2 = 10;
 par.D = 0;
 par.fa = 50;
 par.sl_th = 1;
 par.t_rf = 1;
-par.supp_rf = 100;
+par.supp_rf = 50;
 par.qual_rf = 3;
-par.filt_rf = 'Hamming';
+par.filt_rf = 'None';
 par.verbose = 'False';
 
 opt.T1 = [];
@@ -150,16 +150,39 @@ while ( true )
     
     p_rf = [ 0; 0; p_sl / par.supp_rf ];
     
-    % rephasing gradient moment (for simplicity taken as - 0.5 * p_sl)
-    % as discussed in the Handbook of MRI (and shown by the results),
-    % this choice is reasonable but not optimal.
-    
-    p_refoc = [ 0; 0; - p_sl / 2 ];
-    
     % assign unique handles for the two time intervals
     
-    mu_rf = 1;
-    mu_refoc = 2;
+    lambda_rf = 1;
+
+    %% calculate SLR profile
+    
+    % Eq. (ll)
+    
+    C = cos( 0.5 .* alpha );
+    S = 1i .* sin( 0.5 .* alpha );
+    z05 = exp( 0.5 .* 1i .* p_rf( 3 ) .* x( 3, : ) );
+    z = z05 .* z05;
+    
+    n = par.supp_rf + 1;
+    
+    A = zeros( n, n_sl );
+    B = zeros( n, n_sl );
+    
+    A( 1, : ) = C( 1 );
+    B( 1, : ) = S( 1 );
+    
+    for j = 2 : n
+     
+        A( j, : ) = C( j ) .* A( j - 1, : ) - conj( S( j ) .* z ) .* B( j - 1, : );
+        B( j, : ) = S( j ) .* A( j - 1, : ) + C( j ) .* conj( z ) .* B( j - 1, : );
+        
+    end
+    
+    al_n = conj( z05.^n ) .* A( n, : );
+    be_n = conj( z05.^n ) .* B( n, : );
+    
+    m_xy_SLR = 2 .* conj( al_n ) .* be_n;
+    m_z_SLR = real( al_n .* conj( al_n ) - be_n .* conj( be_n ) );
     
     %% execute the RF pulse
     
@@ -178,7 +201,7 @@ while ( true )
             % in the first time interval, we specify the parameters
             
             param = [];
-            param.mu = mu_rf;
+            param.lambda = lambda_rf;
             param.tau = tau_rf;
             param.p = p_rf;
             
@@ -189,7 +212,7 @@ while ( true )
             % in subsequent calls, we only need the handle
             
             param = [];
-            param.mu = mu_rf;
+            param.lambda = lambda_rf;
             
             cm.time( param );
             
@@ -206,9 +229,9 @@ while ( true )
     end
     
     %% collect the slice profile at locations x
-    % prior to the rephasing gradient, the phase will vary across the slice
     
-    m_iso_rf = zeros( 3, n_sl );
+    m_xy_CM = zeros( 1, n_sl );
+    m_z_CM = zeros( 1, n_sl );
     
     for i = 1 : n_sl
         
@@ -219,61 +242,71 @@ while ( true )
         param.x = x( :, i );
         
         res = cm.sum( param );
-        
-        m_iso_rf( 1, i ) = real( res.xy );
-        m_iso_rf( 2, i ) = imag( res.xy );
-        m_iso_rf( 3, i ) = real( res.z );
-        
-    end
-    
-    %% apply the rephasing gradient
-    % in absense of relaxation, the duration does not matter
-    
-    tau_refoc = 1;
-    
-    param = [];
-    param.mu = mu_refoc;
-    param.tau = tau_refoc;
-    param.p = p_refoc;
-    
-    cm.time( param );
-    
-    %% collect the slice profile at locations x
-    % now the phase should be essentially constant across the slice
-    
-    m_iso_refoc = zeros( 3, n_sl );
-    
-    for i = 1 : n_sl
-        
-        % a restriction of configurations is still not neccessary
-        
-        param = [];
-        param.omega = omega;
-        param.x = x( :, i );
-        
-        res = cm.sum( param );
-        
-        m_iso_refoc( 1, i ) = real( res.xy );
-        m_iso_refoc( 2, i ) = imag( res.xy );
-        m_iso_refoc( 3, i ) = real( res.z );
+ 
+        m_xy_CM( i ) = res.xy;
+        m_z_CM( i ) = real( res.z );
         
     end
     
     %% look at the results
     
-    subplot( 1, 3, 1);
-    plot( par.t_rf .* linspace( -0.5, 0.5, par.supp_rf + 1 ), alpha ./ max( alpha ) );
+    loc = x( 3, : ) .* 0.001;
+    t = par.t_rf .* linspace( -0.5, 0.5, par.supp_rf + 1 );
+    
+    ax = subplot( 1, 3, 1);
+    stem( t, alpha ./ max( alpha ), 'filled' );
     xlim( [ - 0.5 * par.t_rf 0.5 * par.t_rf ] );
-    title( 'B^+_1(t)' );
+    ylim( [ min( alpha ./ max( alpha ) ) - 0.05, 1.05 ] );
+    xlabel( 'time [ms]' );
+    title( 'RF pulse' );
+
+    width = 18;
+    height = 6;
     
-    subplot( 1, 3, 2 );
-    plot( x( 3, : ), m_iso_rf( 1, : ), x( 3, : ), m_iso_rf( 2, : ), x( 3, : ), m_iso_rf( 3, : ) );
-    legend( 'm_x', 'm_y', 'm_z' );
-    title( 'after RF pulse' );
+    set( gcf, 'Units', 'centimeters' );
+    set( gcf, 'Position', [ 0, 0, width, height ] );
+    set( gcf, 'Color', 'w' );
+
+    delta = 0.01;
     
-    subplot( 1, 3, 3 );
-    plot( x( 3, : ), m_iso_refoc( 1, : ), x( 3, : ), m_iso_refoc( 2, : ), x( 3, : ), m_iso_refoc( 3, : ) );
-    legend( 'm_x', 'm_y', 'm_z' );
-    title( 'after rephasing gradient' );
+    ti = ax.TightInset;
+    left = ti(1) + delta;
+    bottom = ti(2) + delta;
+    ax_width = 0.3333 - ti(1) - ti(3) - 2 * delta;
+    ax_height = 1 - ti(2) - ti(4) - 2 * delta;
+    ax.Position = [left bottom ax_width ax_height ];
     
+    ax = subplot( 1, 3, 2 );
+    plot( loc, abs( m_xy_CM ), loc, abs( m_xy_SLR ) );
+    legend( 'CM', 'SLR', 'Location', 'south' );
+    axl = xlabel( 'position [mm]' );
+    title( 'transverse part' );
+
+    ti = ax.TightInset;
+    left = 0.3333 + ti(1) + delta;
+    bottom = ti(2) + delta;
+    ax_width = 0.3333 - ti(1) - ti(3) - 2 * delta;
+    ax_height = 1 - ti(2) - ti(4) - 2 * delta;
+    ax.Position = [left bottom ax_width ax_height ];
+    
+    ax = subplot( 1, 3, 3 );
+    plot( loc, m_z_CM, loc, m_z_SLR );
+    legend( 'CM', 'SLR', 'Location', 'north' );
+    xlabel( 'position [mm]' );
+    title( 'longitudinal part' );
+    
+    ti = ax.TightInset;
+    left = 0.6667 + ti(1) + delta;
+    bottom = ti(2) + delta;
+    ax_width = 0.3333 - ti(1) - ti(3) - 2 * delta;
+    ax_height = 1 - ti(2) - ti(4) - 2 * delta;
+    ax.Position = [left bottom ax_width ax_height ];
+    
+    fprintf( 1, 'median( abs( CM / SLR - 1 ) )\n' );
+    fprintf( 1, 'xy: %e\n', median( abs( m_xy_CM / m_xy_SLR - 1 ) ) );
+    fprintf( 1, ' z: %e\n', median( abs( m_z_CM / m_z_SLR - 1 ) ) );
+    fprintf( 1, 'max( abs( CM - SLR ) )\n' );
+    fprintf( 1, 'xy: %e\n', max( abs( m_xy_CM - m_xy_SLR ) ) );
+    fprintf( 1, ' z: %e\n', max( abs( m_z_CM - m_z_SLR ) ) );
+
 end

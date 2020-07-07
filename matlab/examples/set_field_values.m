@@ -1,5 +1,5 @@
-function [ out, sel ] = sfv ( in, varargin )
-%SFV set multiple field values interactively
+function [ out, sel ] = set_field_values ( in, varargin )
+%SET_FIELD_VALUES set multiple field values interactively
 
 out = in;
 
@@ -48,11 +48,11 @@ sel = 1;
 
 while( sel > 0 )
     
-    select_field;
+    select_field( );
     
     if ( sel > 0 )
         
-        set_field;
+        set_field( );
         
     end
     
@@ -65,6 +65,7 @@ end
     function select_field ( )
         
         sel = -2;
+        v_ = cell( n_fields, 1 );
         
         while( ( sel < 1 || sel > n_fields ) && sel ~= 0 && sel ~= -1 )
             
@@ -76,17 +77,27 @@ end
                 
                 if ( isnumeric( out.( fn{ i } ) ) )
                     
-                    s_ = num2str( out.( fn{ i } ) );
+                    if ( length( out.( fn{ i } ) ) == 1 )
+                    
+                        v_{ i } = num2str( out.( fn{ i } ) );
+                        
+                    else
+                        
+                        v_{ i } = [ num2str( out.( fn{ i } )( 1 ) ), ' : ', ...
+                            num2str( out.( fn{ i } )( 2 ) - out.( fn{ i } )( 1 ) ), ' : ', ...
+                            num2str( out.( fn{ i } )( end ) ) ];
+                        
+                    end
                     
                 else
                                         
-                    s_ = out.( fn{ i } );
+                    v_{ i } = out.( fn{ i } );
                     
                 end
                 
-                if ( length( s_ ) > max_val )
+                if ( length( v_{ i } ) > max_val )
                     
-                    max_val = length( s_ );
+                    max_val = length( v_{ i } );
                     
                 end
                 
@@ -104,15 +115,7 @@ end
                     
                 end
 
-                if ( isnumeric( out.( fn{ i } ) ) )
-                    
-                    fprintf( 1, fs, i, fn{ i }, num2str( out.( fn{ i } ) ), s_ );
-                    
-                else
-                                        
-                    fprintf( 1, fs, i, fn{ i }, out.( fn{ i } ), s_ );
-                    
-                end
+                fprintf( 1, fs, i, fn{ i }, v_{ i }, s_ );
                 
             end
             

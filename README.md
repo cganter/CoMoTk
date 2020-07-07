@@ -1,14 +1,14 @@
 
 # Table of Contents
 
-1.  [Background](#org58e5d3f)
-2.  [Installation](#orgc09f64f)
-3.  [Small Example](#org912fd6a)
-4.  [Current State](#org85c9e49)
-5.  [Feedback](#org458ba54)
+1.  [Background](#orgb4a0678)
+2.  [Installation](#org2b9fe90)
+3.  [Small Example](#org2525229)
+4.  [Current State](#orgea046bb)
+5.  [Feedback](#org869e72b)
 
 
-<a id="org58e5d3f"></a>
+<a id="orgb4a0678"></a>
 
 # Background
 
@@ -20,6 +20,7 @@ The following non-exhaustive list shows a few possible options and alternatives:
 -   RF pulses 
     -   constant flip angles vs. slice profile
     -   instantaneous vs. finite duration
+    -   RF pulse design
 -   gradients
     -   ideal vs. real crusher gradients (suppression of unwanted echoes)
     -   gradient shapes
@@ -39,7 +40,7 @@ The following non-exhaustive list shows a few possible options and alternatives:
 It is based upon a generalized version of the so-called configuration model, which will be described elsewhere.
 
 
-<a id="orgc09f64f"></a>
+<a id="org2b9fe90"></a>
 
 # Installation
 
@@ -48,11 +49,11 @@ Just add the `matlab/` folder with subdirectories to your Matlab path.
 **Important**: A Matlab version of **R2016b** or later is required, since implicit expansion is used a lot.
 
 
-<a id="org912fd6a"></a>
+<a id="org2525229"></a>
 
 # Small Example
 
-The following example should a first impression of how to work with the toolkit, while the [User Guide](doc/CoMoTk_UserGuide.pdf) gives a complete overview of the available options. It is also recommended to look at the scripts in the `test` and `examples` folders, which cover typical application scenarios and may serve as templates for own projects. To make full use of the toolkit, it is important to understand the theory behind the configuration model, which will be presented in an article (link will be given, as soon as available).
+The following example should give a first impression of how to work with the toolkit, while the [User Guide](doc/CoMoTk_UserGuide.pdf) gives a complete overview of the available options. It is also recommended to look at the scripts in the `test` and `examples` folders, which cover typical application scenarios and may serve as templates for own projects. To make full use of the toolkit, it is important to understand the theory behind the configuration model, which will be presented in an article (link will be given, as soon as available).
 
     % Example: sample FID of SSFP during transient phase 
     
@@ -108,7 +109,7 @@ The following example should a first impression of how to work with the toolkit,
     % done
 
 
-<a id="org85c9e49"></a>
+<a id="orgea046bb"></a>
 
 # Current State
 
@@ -159,7 +160,7 @@ folder. The following table gives a brief overview on the actual state.
 It will be updated.
 
 
-<a id="org458ba54"></a>
+<a id="org869e72b"></a>
 
 # Feedback
 
