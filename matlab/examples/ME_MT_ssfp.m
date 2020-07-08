@@ -27,7 +27,7 @@ str.prep = '[max(T1_a, T1_b)] duration of preparation phase';
 
 while ( true )
     
-    [ par, sel ] = sfv( par, opt, str );
+    [ par, sel ] = set_field_values( par, opt, str );
     
     if ( sel == -1 )
         

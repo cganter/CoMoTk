@@ -71,7 +71,7 @@ str.verbose = 'provide some informal output';
 
 while ( true )
     
-    [ par, select_conf ] = sfv( par, opt, str );
+    [ par, select_conf ] = set_field_values( par, opt, str );
     
     if ( select_conf == -1 )
         

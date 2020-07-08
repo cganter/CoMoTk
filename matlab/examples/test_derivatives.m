@@ -81,7 +81,7 @@ n_x = length( x );
     
 while ( true )
     
-    [ par, sel ] = sfv( par, opt, str );
+    [ par, sel ] = set_field_values( par, opt, str );
     
     if ( sel == -1 )
         
@@ -352,7 +352,7 @@ while ( true )
             % time interval
             
             param = [];
-            param.mu = idx.tau( i_n );
+            param.lambda = idx.tau( i_n );
             param.tau = var.tau( idx.tau( i_n ) );
             param.p = var.p( :, idx.tau( i_n ) );
             

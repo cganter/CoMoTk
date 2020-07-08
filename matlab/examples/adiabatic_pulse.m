@@ -48,7 +48,7 @@ str.n_rf = 'number of RF support points';
 
 while ( true )
     
-    [ par, sel ] = sfv( par, opt, str );
+    [ par, sel ] = set_field_values( par, opt, str );
     
     if ( sel == -1 )
         

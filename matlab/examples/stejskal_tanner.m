@@ -60,7 +60,7 @@ str.num_b = 'number of b-value to be simulated';
 
 while ( true )
     
-    [ par, sel ] = sfv( par, opt, str );
+    [ par, sel ] = set_field_values( par, opt, str );
     
     if ( sel == -1 )
         
