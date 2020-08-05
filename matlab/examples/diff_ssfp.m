@@ -279,9 +279,10 @@ while ( true )
     ax = subplot( 1, 1, 1 );
         
     semilogy( n, abs( m_xy ), '-b', n, abs( freed.xy ), '+b', n, abs( m_xy_0 ), '-r', n, abs( freed_0.xy ), '+r' );
-    legend( [ 'CM  D = ', num2str( par.D ) ], [ 'Th.  D = ', num2str( par.D ) ], 'CM  D = 0', 'Th.  D = 0', 'Location', 'south' );
-    title( 'transverse magnitude' );
-    xlabel( 'configuration order n' );    
+    legend( [ 'CM  D = ', num2str( par.D ) ], [ 'Th.  D = ', num2str( par.D ) ], 'CM  D = 0', 'Th.  D = 0', 'Interpreter', 'latex', 'Location', 'south' );
+    xlabel( 'configuration order $n$', 'Interpreter', 'latex' );    
+    ylabel( '$\left|m_{xy}^{\left(n\right)}\right|$', 'Interpreter', 'latex' );
+    title( 'Diffusion in SSFP', 'Interpreter', 'latex' );
     
     xlim( [ (-par.n_max - 1) (par.n_max + 1) ] );
     ylim( [ 0.5 * min( abs( m_xy( : ) ) ) 2 * max( abs( freed_0.xy( : ) ) ) ] );

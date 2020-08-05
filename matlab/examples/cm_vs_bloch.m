@@ -469,7 +469,7 @@ while ( true )
             ylabel( '$\alpha_\nu, \varphi_\nu$', 'Interpreter', 'latex' );            
             xlabel( '$\nu$', 'Interpreter', 'latex' );
             xlim( [ 0, par.n_inter ] );
-            legend( 'flip angle', 'phase', 'Location', 'south' );
+            legend( 'flip angle', 'phase', 'Interpreter', 'latex', 'Location', 'south' );
 
             title( 'Random Sequence', 'Interpreter', 'latex' );
                 
@@ -489,7 +489,7 @@ while ( true )
             plot( rng, abs( m_xy_bloch ), '+k', rng, abs( m_xy_exact ), 'b', rng, abs( m_xy_rapid ), 'r' );
             xlabel( '$\nu$', 'Interpreter', 'latex' );
             ylabel( '$\left|m_{xy}\right|$', 'Interpreter', 'latex' );
-            legend( 'Bloch', 'CM (exact)', 'CM (rapid)', 'Location', 'best' );
+            legend( 'Bloch', 'CM (exact)', 'CM (rapid)', 'Interpreter', 'latex', 'Location', 'best' );
             title( 'Transverse Magnetization', 'Interpreter', 'latex' );
             
             ti = ax.TightInset;
@@ -507,7 +507,7 @@ while ( true )
             xlim( [ 0 par.n_inter ] );
             xlabel( '$\nu$', 'Interpreter', 'latex' );
             ylabel( '$\left|\bf{\Delta m}\right|$', 'Interpreter', 'latex' );            
-            legend( 'exact', 'rapid', 'Location', 'east' );
+            legend( 'exact', 'rapid', 'Interpreter', 'latex', 'Location', 'east' );
             title( 'Deviation from Bloch', 'Interpreter', 'latex' );
             
             ti = ax.TightInset;
@@ -524,7 +524,8 @@ while ( true )
             semilogy( rng_tot, n_conf_exact, rng_tot, n_conf_rapid );
             xlim( [ 0 par.n_inter ] );
             xlabel( '$\nu$', 'Interpreter', 'latex' );
-            legend( 'occupied', 'stored', 'Location', 'south' );
+            ylabel( 'number', 'Interpreter', 'latex' );
+            legend( 'occupied', 'stored', 'Interpreter', 'latex', 'Location', 'south' );
             title( 'Configurations', 'Interpreter', 'latex' );
 
             ti = ax.TightInset;
@@ -562,8 +563,8 @@ while ( true )
             xlim( [ 0 par.n_inter ] );
             xlabel( '$\nu$', 'Interpreter', 'latex' );
             ylabel( '[ms]', 'Interpreter', 'latex' );
-            legend( 'exact', 'rapid', 'Location', 'northwest' );
-            title( 'CPU time per interval', 'Interpreter', 'latex' );
+            legend( 'exact', 'rapid', 'Interpreter', 'latex', 'Location', 'northwest' );
+            title( 'CPU Time / Interval', 'Interpreter', 'latex' );
             
             ti = ax.TightInset;
             left = 0.6667 + ti(1) + delta;

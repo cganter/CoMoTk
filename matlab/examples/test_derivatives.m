@@ -4,6 +4,7 @@
 % The result is plotted logarithmically against h over three decades.
 % If the analytical derivative is calculated correctly, we expect
 % the deviation to be proportional to h (in leading order)
+% The asterisk symbols should lie on the displayed straight line.
 
 % test is based on individual configurations or isochromats
 
@@ -220,6 +221,7 @@ while ( true )
             
     % randomized sequence of RF pulses and time intervals
     
+    idx = [];
     idx.fa = randi( par.n_fa, 1, par.train );
     idx.ph = randi( par.n_ph, 1, par.train );
     idx.tau = randi( par.d, 1, par.train );

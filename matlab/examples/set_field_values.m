@@ -1,5 +1,7 @@
 function [ out, sel ] = set_field_values ( in, varargin )
 %SET_FIELD_VALUES set multiple field values interactively
+%
+% helper routine to facilitate command line user interaction
 
 out = in;
 

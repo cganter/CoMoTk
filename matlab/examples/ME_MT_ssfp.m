@@ -246,13 +246,14 @@ while ( true )
     theta = in.TR .* in.omega;
     
     ax = subplot( 1, 2, 1 );
-    plot( theta, abs( MT_m0_ss ), 'g', theta, abs( MT_m_ss ), 'b', theta, abs( MT_m_ss_theory ), 'r--', 'LineWidth', 3 );
+    plot( theta, abs( MT_m_ss ), 'b', theta( 1 : 20 : end ), abs( MT_m_ss_theory( 1 : 20 : end ) ), 'b+', theta, abs( MT_m0_ss ), 'r' );
 
     xlim( [ -pi, pi ] );
     ylim( [ 0.03, 0.13 ] );
-    xlabel( 'off-resonance [rad/TR]' );
-    title( 'Magnetization Transfer' );
-    legend( 'no coupling', 'CM', 'Theory', 'Interpreter', 'latex', 'Location', 'north' );
+    xlabel( 'off-resonance [rad/TR]', 'Interpreter', 'latex' );
+    ylabel( '$\left|m_{xy}\right|$', 'Interpreter', 'latex' );
+    title( 'Magnetization Transfer', 'Interpreter', 'latex' );
+    legend( 'CM', 'Theory', 'no coupling', 'Interpreter', 'latex', 'Location', 'north' );
     
     width = 14;
     height = 7.5;
@@ -271,13 +272,14 @@ while ( true )
     ax.Position = [left bottom ax_width ax_height ];
     
     ax = subplot( 1, 2, 2 );
-    plot( theta, abs( ME_m0_ss ), 'g', theta, abs( ME_m_ss ), 'b', theta, abs( ME_m_ss_theory ), 'r--', 'LineWidth', 3 );
+    plot( theta, abs( ME_m_ss ), 'b', theta( 1 : 20 : end ), abs( ME_m_ss_theory( 1 : 20 : end ) ), 'b+', theta, abs( ME_m0_ss ), 'r' );
     
     xlim( [ -pi, pi ] );
     ylim( [ 0.03, 0.17 ] );
-    xlabel( 'off-resonance [rad/TR]' );
-    title( 'Magnetization Exchange' );
-    legend( 'no coupling', 'CM', 'Theory', 'Interpreter', 'latex', 'Location', 'north' );
+    xlabel( 'off-resonance [rad/TR]', 'Interpreter', 'latex' );
+    ylabel( '$\left|m_{xy}\right|$', 'Interpreter', 'latex' );
+    title( 'Magnetization Exchange', 'Interpreter', 'latex' );
+    legend( 'CM', 'Theory', 'no coupling', 'Interpreter', 'latex', 'Location', 'north' );
     
     ti = ax.TightInset;
     left = 0.5 + ti(1) + delta;

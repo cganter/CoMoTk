@@ -1,22 +1,27 @@
 classdef CoMoTk < matlab.mixin.Copyable
     % CoMoTk  Configuration Model Toolkit
     %
-    % Features:
+    % Implementation of the configuration model (CM), which has
+    % been extensively described in a separate open-access manuscript.
+    % (link available on: https://github.com/cganter/CoMoTk)
+    % 
+    % Also check out the specific documentation and example scripts.
     %
-    % - optional: diffusion effects
-    % - optional: derivatives with respect to R1, R2, B1 and D
+    % To facilitate the use in optimization problems, it also supports the
+    % (optional) calculation of several first order derivatives.
     %
+    % Requires Matlab R2016b (or later).
     %
     % Carl Ganter 2018
     
     properties ( Constant )
         
-        % frequently used
+        % frequently used parameters
         
         sqrt_2 = sqrt( 2 );
         sqrt_0p5 = sqrt( 0.5 );
         
-        % tensor indices
+        % diffusion tensor indices
 
         Tensor_idx = struct( ...
 			'xx',      1, ...
@@ -38,6 +43,13 @@ classdef CoMoTk < matlab.mixin.Copyable
     properties
         
         % function handle for inhomogeneous broadening
+        %
+        % the format is 'inhomogeneous_decay( t, param )'
+        % where 't' is the time and 'param' may contain arbitrary fields with
+        % optional parameters (supplied in the equally named argument of
+        % the method 'sum')
+        % Any user supplied function needs to accept these two parameters
+        % (if 'param' is not needed, its value can simply be ignored)
         
         inhomogeneous_decay = [];
         
@@ -67,17 +79,16 @@ classdef CoMoTk < matlab.mixin.Copyable
         
         mu;
         
-        % delta omega (due to chemical shift)
+        % delta omega (due to chemical shift, e.g. to specify water/fat models)
         
-        dom;                                                             % [ radian / ms ]
+        dom;                                                               % [ rad / ms ]
         
-        % R2^\prime
+        % transition rates (magnetization transfer and exchange)
         
-        R2p;                                                             % [ 1 / ms ]
+        k;                                                                 % [ 1 / ms ]
         
-        % transition rates
-        
-        k;                                                               % [ 1 / ms ]
+        % as unit for bulk motion we assume [ mm / s ]
+        % (used in method "time")
         
         %% measurement conditions
         % relative B1
@@ -97,12 +108,12 @@ classdef CoMoTk < matlab.mixin.Copyable
         % -> and the minimal reallocation increment, if a limit is reached
         
         options_priv = struct( ...
-            'alloc_d', 1, ...                                            % dimension of configuration model
-            'alloc_n', 10000, ...                                         % number of occupied states
-            'epsilon', 0, ...                                         % discard configuration vectors with a squared norm smaller than this
-            'rapid_meltdown', true, ...                            % should be faster, but requires more memory
-            'verbose', false, ...                                      % various status messages
-            'debug', false ...                                         % store state for debugging purposes
+            'alloc_d', 1, ...                                              % dimension of configuration model
+            'alloc_n', 10000, ...                                          % number of occupied states
+            'epsilon', 0, ...                                              % discard configuration vectors with a squared norm smaller than this
+            'rapid_meltdown', true, ...                                    % should be faster, but requires more memory
+            'verbose', false, ...                                          % various status messages
+            'debug', false ...                                             % store state for debugging purposes
             );
         
         % actual values
@@ -118,10 +129,10 @@ classdef CoMoTk < matlab.mixin.Copyable
         
         m = [];                                                            % configuration vector
         
-        b_lambda = [];                                                         % occupied dimensions
+        b_lambda = [];                                                     % occupied dimensions
         b_n = [];                                                          % occupied configurations (total)
         
-        lambda = [];                                                           % indices of dimensions
+        lambda = [];                                                       % indices of dimensions
         n = [];                                                            % configuration orders in each dimension
         
         n_tissues = 0;		                                               % number of tissues
@@ -145,7 +156,6 @@ classdef CoMoTk < matlab.mixin.Copyable
         
         mu_priv = 1;
         dom_priv = 0;
-        R2p_priv = 0;
         k_priv = [];
         B1_priv = 1;
         
@@ -162,13 +172,13 @@ classdef CoMoTk < matlab.mixin.Copyable
         % and g( t ) the gradient in [ mT / um ]
         
         b_p = [];
-        p = [];                                                            % [ 1 / um ]
+        p = [];                                                            % [ rad / um ]
         
         % integrals for arbitrary (but otherwise constant) gradient shapes
         % see documentation for the precise definition
         
-        s = [];                                                            % [ 1 / um ]
-        S = [];                                                            % [ 1 / um^2 ]
+        s = [];                                                            % [ rad / um ]
+        S = [];                                                            % [ rad^2 / um^2 ]
    
         % auxiliary variable for tensor diffusion
         
@@ -282,14 +292,16 @@ classdef CoMoTk < matlab.mixin.Copyable
         %% constructor
         
         function cm = CoMoTk ( )
-            % CONSTRUCTOR
-            % no arguments, no action needed
+            % constructor (no arguments, no action)
             
         end
         
         %% set / get methods (mandatory variables)
         
         function set.R1 ( cm, R1 )
+            % set relaxation rate R1 = 1 / T1
+            %
+            % length must match the number of subtissues (e.g. for fat models)
             
             if ( ~isempty( cm.m ) )
                 
@@ -320,12 +332,16 @@ classdef CoMoTk < matlab.mixin.Copyable
         end
         
         function res = get.R1 ( cm )
+            % return relaxation rate
             
             res = cm.R1_priv;
             
         end
         
         function set.R2 ( cm, R2 )
+            % set relaxation rate R2 = 1 / T2
+            %
+            % length must match the number of subtissues (e.g. for fat models)
             
             if ( ~isempty( cm.m ) )
                 
@@ -356,12 +372,20 @@ classdef CoMoTk < matlab.mixin.Copyable
         end
         
         function res = get.R2 ( cm )
+            % return relaxation rate
             
             res = cm.R2_priv;
             
         end
         
         function set.D ( cm, D )
+            % set diffusion constant or tensor
+            %
+            % determined by size of argument:
+            % size( D ) == [ 1, n_tissues ]    (isotropic diffusion constant)
+            % size( D ) == [ 3, 3, n_tissues ] (anisotropic diffusion tensor)
+            %
+            % absence of diffusion: just set all elements D( : ) to zero 
             
             if ( ~isempty( cm.m ) )
                 
@@ -429,6 +453,7 @@ classdef CoMoTk < matlab.mixin.Copyable
         end
         
         function res = get.D ( cm )
+            % return diffusion constant or tensor
             
             res = cm.D_priv;
             
@@ -439,6 +464,9 @@ classdef CoMoTk < matlab.mixin.Copyable
         % relative B1 (default == 1)
         
         function set.B1 ( cm, B1 )
+            % set relative B1+
+            %
+            % set to 1, if not explicitly specified            
             
             if ( ~isempty( cm.m ) )
                 
@@ -457,6 +485,7 @@ classdef CoMoTk < matlab.mixin.Copyable
         end
         
         function res = get.B1 ( cm )
+            % get relative B1+
             
             res = cm.B1_priv;
             
@@ -466,6 +495,10 @@ classdef CoMoTk < matlab.mixin.Copyable
         % (default == 1)
         
         function set.mu ( cm, mu )
+            % set the (relative) proton density
+            %
+            % length must match the number of subtissues (e.g. for fat models)
+            % set to 1, if not explicitly specified
             
             if ( ~isempty( cm.m ) )
                 
@@ -488,16 +521,19 @@ classdef CoMoTk < matlab.mixin.Copyable
         end
         
         function res = get.mu ( cm )
+            % return the (relative) proton density
             
             res = cm.mu_priv;
             
         end
         
-        % relative frequencies
-        % (default == 0)
-        
         function set.dom ( cm, dom )
-            
+            % relative resonance frequencies of subtissues 
+            % (e.g. due to chemical shift)
+            %
+            % length must match the number of subtissues (e.g. for fat models)            
+            % set to 0, if not explicitly specified
+                        
             if ( cm.n_tissues == 0 )
                 
                 cm.n_tissues = length( dom );
@@ -513,51 +549,18 @@ classdef CoMoTk < matlab.mixin.Copyable
         end
         
         function res = get.dom ( cm )
+            % return relative resonance frequencies
             
             res = cm.dom_priv;
             
         end
-        
-        % R2^\prime
-        % (default == 0)
-        
-        function set.R2p ( cm, R2p )
-            
-            if ( cm.n_tissues == 0 )
                 
-                cm.n_tissues = length( R2p );
-                
-            elseif ( length( R2p ) ~= cm.n_tissues && length( R2p ) ~= 1 )
-                
-                error( 'length( R2p ) must be equal to the number of tissues or one.' );
-                
-            end
-            
-            if ( length( R2p ) == cm.n_tissues )
-            
-                cm.R2p_priv = reshape( R2p, [ cm.n_tissues, 1 ] );
-            
-            else
-                
-                cm.R2p_priv = repmat( R2p, [ cm.n_tissues, 1 ] );
-                
-            end
-                
-            if ( max( abs( R2p ) ) > 0 )
-            
-                cm.inhomogeneous_decay = @cm.lorentz_decay;
-            
-            end
-            
-        end
-        
-        function res = get.R2p ( cm )
-            
-            res = cm.R2p_priv;
-            
-        end
-        
         function set.k ( cm, k )
+            % transition rates for magnetization transfer/exchange
+            %
+            % the following size is required:
+            % size( k ) == [ n_tissues, n_tissues ]
+            % set to [], if not set (non-exchanging tissues)
             
             if ( cm.n_tissues == 0 )
                 
@@ -596,6 +599,7 @@ classdef CoMoTk < matlab.mixin.Copyable
         end
         
         function res = get.k( cm )
+            % get transition rates (== [], if not set)
             
             res = cm.k_priv;
             
@@ -604,6 +608,7 @@ classdef CoMoTk < matlab.mixin.Copyable
         % options
         
         function set.options ( cm, options )
+            % set some options
             
             if ( ~isempty( cm.m ) )
                 
@@ -616,6 +621,10 @@ classdef CoMoTk < matlab.mixin.Copyable
         end
         
         function res = get.options ( cm )
+            % get actual options
+            %
+            % can be used to obtain actual defaults, before applying the
+            % associated 'set' method
             
             res = cm.options_priv;
             
@@ -624,7 +633,7 @@ classdef CoMoTk < matlab.mixin.Copyable
         %% prepare magnetization
         
         function init_configuration ( cm, m )
-            % INIT_CONFIGURATION  Initializes configuration
+            % Initializes configuration
             %
             % IN
             %
@@ -634,6 +643,9 @@ classdef CoMoTk < matlab.mixin.Copyable
             %     m( 3 ) == m_z
             %
             % Assumption: only zero order configuration occupied
+            %
+            % Method must be called *after* all mandatory parameters (R1, R2, D)
+            % have been set. 
             
             cm.check_mandatory_parameters;
             
@@ -748,14 +760,16 @@ classdef CoMoTk < matlab.mixin.Copyable
         %% define, which derivatives should be calculated
         
         function set_derivatives ( cm, param )
-            % SET_DERIVATIVES  Define the set of derivatives, to be calculated
+            % Define the set of derivatives, to be calculated
             %
             % IN
             %
-            % varargin : pairs (X,Y), where
-            %            X is from the set { 'R1', 'R2', 'D', 'B1', 'FlipAngle', 'Phase', 'tau', 'p', 's' }
-            %            and Y is an integer
-            %            exception: for X == 'B1', the argument Y is not given
+            % every parameter X, for which a first order partial derivative
+            % shall be calculated, is added to the supplied structure as a
+            % field: param.X
+            % X is from the set { 'R1', 'R2', 'D', 'B1', 'FlipAngle', 'Phase', 'tau', 'p', 's', 'S' }
+            % the length of param.X specifies further selection
+            % like specific tissue(s), RF pulse(s) (details see below)
             
             if ( isempty( cm.m ) )
                 
@@ -870,35 +884,26 @@ classdef CoMoTk < matlab.mixin.Copyable
         %% spin dynamics
         
         function RF ( cm, param )
-            % RF  Applies an instantaneous RF pulse
+            % Applies an instantaneous RF pulse
             %
             % IN
             %
-            % param    : flip angle [rad] (scalar)
-            % phase    : Phase of RF pulse [rad] (scalar)
-            % varargin : optional ( tag, handle ) pairs
+            % param : structure with the info about the RF pulse,
+            % specifically:
             %
-            % format of varargin:
+            % param.FlipAngle : flip angle [rad] (mandatory parameter)
             %
-            % tag = 'Pulse' | 'FlipAngle' | 'Phase'
-            % handle = positive integer
+            % param.Phase     : phase [rad] (mandatory parameter)
+            % 
+            % optional parameters to identify derivatives:
             %
-            % meaning of arguments:
-            %
-            % 'Pulse' : If the same RF pulse is executed more than once, it makes sense
-            %           to store the rotation matrix (including possible derivatives)
-            %           at the first execution for reuse in later calls.
-            %           Each pulse is uniquely defined by its handle.
-            %
-            % OUT
-            %
-            % out   : state immediately after instantaneous rotation
-            % block : information, which can be used to speed up next call
-            %         via method CoMoTk.run (of course only, if identical
-            %         RF pulse is repeated)
-            %
-            % All phases simply refer to some given fixed coordinate
-            % system and are not defined relative to the previous RF pulse.
+            % param.handle_FlipAngle : handle to identify flip angle
+            % 
+            % param.handle_Phase     : handle to identify phase
+            % 
+            % param.MT_sat           : parameters for MT saturation pulse
+            % (instead of instantaneous rotation) 
+            % For proper use see example script and associated passage in the manuscript.
             
             % check, whether all variables have been set.
             
@@ -1167,20 +1172,35 @@ classdef CoMoTk < matlab.mixin.Copyable
         end
         
         function b_is_ok = time ( cm, param )
-            % TIME  time evolution during period T( handle_time ) (without RF pulse)
+            % Applies time interval
             %
             % IN
             %
-            % in    : prior state (configuration vector and optional derivatives)
+            % param : structure with the info about the RF pulse,
+            % specifically:
+            %
+            % param.lambda : unique index to identify the interval (mandatory parameter)
+            % 
+            % param.tau    : duration [ms] (mandatory in first call only)
+            % 
+            % param.p      : zero-order gradient moment [ rad / um ]
+            % (only mandatory if D ~= 0)
+            % 
+            % param.s and param.S : information about gradient shape
+            % (relevant for diffusion only, otherwise ignored)
+            % 
+            % param.v      : (constant) bulk motion velocity vector during
+            % interval [ mm / s ] (optional)
+            %
+            % param.x      : location (vector) at start of interval [ um ]
+            % (required in case of bulk motion)
+            %
+            % param.p1     : first order gradient moment [ rad * ms / um ]
+            % (optional, only relevant in case of bulk motion)
             %
             % OUT
             %
-            % out   : state immediately after time period
-            % block : information, which can be used to speed up next call
-            %         via method CoMoTk.run
-            %
-            % Different from the instantaneous pulse, the states of adjacent
-            % configuration orders mix during this period.
+            % b_is_ok : (bool) status, used for debugging
             
             % update dimensions and indices
             
@@ -1268,7 +1288,7 @@ classdef CoMoTk < matlab.mixin.Copyable
                 end
                 
             end
-            
+                        
             if ( cm.diffusion ~= CoMoTk.No_Diff )
                 
                 % gradient shape (ignored, in absence of diffusion)
@@ -1487,21 +1507,21 @@ classdef CoMoTk < matlab.mixin.Copyable
                             
                             cm.dm.dR2( 1, cm.dR2( i ), cm.idx_up( cm.b_n, idx_time ), 1, i ) = ...
                                 cm.dm.dR2( 1, cm.dR2( i ), cm.idx_up( cm.b_n, idx_time ), 1, i ) - ...
-                                cm.tau( idx_time ) .* cs_tau .* cm.E( 2, cm.dR2( i ), idx_time ) .* cm.m( 1, cm.dR2( i ), cm.b_n );
+                                cm.tau( idx_time ) .* cs_tau( cm.dR2( i ) ) .* cm.E( 2, cm.dR2( i ), idx_time ) .* cm.m( 1, cm.dR2( i ), cm.b_n );
                             
                             cm.dm.dR2( 3, cm.dR2( i ), cm.idx_do( cm.b_n, idx_time ), 1, i ) = ...
                                 cm.dm.dR2( 3, cm.dR2( i ), cm.idx_do( cm.b_n, idx_time ), 1, i ) - ...
-                                cm.tau( idx_time ) .* conj( cs_tau ) .* cm.E( 2, cm.dR2( i ), idx_time ) .* cm.m( 3, cm.dR2( i ), cm.b_n );
+                                cm.tau( idx_time ) .* conj( cs_tau( cm.dR2( i ) ) ) .* cm.E( 2, cm.dR2( i ), idx_time ) .* cm.m( 3, cm.dR2( i ), cm.b_n );
                             
                         else
                             
                             cm.dm.dR2( 1, cm.dR2( i ), cm.idx_up( cm.b_n, idx_time ), 1, i ) = ...
                                 cm.dm.dR2( 1, cm.dR2( i ), cm.idx_up( cm.b_n, idx_time ), 1, i ) - ...
-                                cm.tau( idx_time ) .* cs_tau .* cm.En( 1, cm.dR2( i ), cm.b_n, idx_time ) .* cm.m( 1, cm.dR2( i ), cm.b_n );
+                                cm.tau( idx_time ) .* cs_tau( cm.dR2( i ) ) .* cm.En( 1, cm.dR2( i ), cm.b_n, idx_time ) .* cm.m( 1, cm.dR2( i ), cm.b_n );
                             
                             cm.dm.dR2( 3, cm.dR2( i ), cm.idx_do( cm.b_n, idx_time ), 1, i ) = ...
                                 cm.dm.dR2( 3, cm.dR2( i ), cm.idx_do( cm.b_n, idx_time ), 1, i ) - ...
-                                cm.tau( idx_time ) .* conj( cs_tau ) .* cm.En( 3, cm.dR2( i ), cm.b_n, idx_time ) .* cm.m( 3, cm.dR2( i ), cm.b_n );
+                                cm.tau( idx_time ) .* conj( cs_tau( cm.dR2( i ) ) ) .* cm.En( 3, cm.dR2( i ), cm.b_n, idx_time ) .* cm.m( 3, cm.dR2( i ), cm.b_n );
                             
                         end
                         
@@ -1517,7 +1537,7 @@ classdef CoMoTk < matlab.mixin.Copyable
                         
                         cm.dm.dD( 1, cm.dD( i ), cm.idx_up( cm.b_n, idx_time ), :, i ) = ...
                             cm.dm.dD( 1, cm.dD( i ), cm.idx_up( cm.b_n, idx_time ), :, i ) + ...
-                            cs_tau .* ...
+                            cs_tau( cm.dD( i ) ) .* ...
                             cm.dEn_exp_dD( 1, 1, cm.b_n, :, idx_time ) .* ...
                             cm.En( 1, cm.dD( i ), cm.b_n, idx_time ) .* ...
                             cm.m( 1, cm.dD( i ), cm.b_n );
@@ -1530,7 +1550,7 @@ classdef CoMoTk < matlab.mixin.Copyable
                         
                         cm.dm.dD( 3, cm.dD( i ), cm.idx_do( cm.b_n, idx_time ), :, i ) = ...
                             cm.dm.dD( 3, cm.dD( i ), cm.idx_do( cm.b_n, idx_time ), :, i ) + ...
-                            conj( cs_tau ) .* ...
+                            conj( cs_tau( cm.dD( i ) ) ) .* ...
                             cm.dEn_exp_dD( 3, 1, cm.b_n, :, idx_time ) .* ...
                             cm.En( 3, cm.dD( i ), cm.b_n, idx_time ) .* ...
                             cm.m( 3, cm.dD( i ), cm.b_n );
@@ -1689,8 +1709,7 @@ classdef CoMoTk < matlab.mixin.Copyable
                 
             else                              % with magnetization exchange
 
-                %% finally we update the configuration cm.m
-                % prep exchange matrices
+                %% magnetization exchange
                 
                 b_inf_R2 = isinf( cm.R2 );
                 
@@ -1814,6 +1833,47 @@ classdef CoMoTk < matlab.mixin.Copyable
                 
             end
             
+            % bulk motion due to constant velocity during the interval
+            
+            if ( isfield( param, 'v' ) )
+                
+                % "v" is the actual velocity vector, units are [ mm / s ]
+                % (it does not matter, whether it is a row or column vector)
+
+                if ( ~isfield( param, 'x' ) )
+                    
+                    error( 'The location should be supplied in case of bulk motion.' );
+                    
+                end                
+                
+                if ( isfield( param, 'p1' ) )
+                    
+                    % If the first order gradient is supplied, we use it.
+                    % Unit of p1: [ rad * ms / um ]
+
+                    dth = - param.p1( : )' * param.v( : );
+
+                else
+                    
+                    % 0therwise, we assume a constant gradient during the
+                    % interval. In that case, the angle due to dephasing is just
+                    % - (tau/2) * (p * v)
+                    
+                    % NOTE: nonzero velocities are currently not taken into account, when calculating derivatives!
+                    
+                    dth = - ( 0.5 * cm.tau( idx_time ) ) * ( cm.p( :, idx_time )' * param.v( : ) );
+                    
+                end
+                
+                dth = dth - cm.p( :, idx_time )' * param.x( : );
+                
+                ei_dth = exp( 1i * dth );
+                
+                cm.m( 1, cm.b_n ) = ei_dth .* cm.m( 1, cm.b_n );
+                cm.m( 3, cm.b_n ) = conj( ei_dth ) .* cm.m( 3, cm.b_n );
+                
+            end
+            
             % update configuration dependent time and gradient
             
             cm.update_tau_n;
@@ -1822,8 +1882,7 @@ classdef CoMoTk < matlab.mixin.Copyable
         end
         
         function spoiler ( cm )
-            
-            % set all transverse magnetization to zero
+            % set all transverse magnetization to zero (instantaneously)
            
             cm.m( [ 1, 3 ], :, cm.b_n ) = 0;
             
@@ -1836,6 +1895,18 @@ classdef CoMoTk < matlab.mixin.Copyable
         %% get results
         
         function b_n = find ( cm, lambda, n )
+            % search for specific configurations
+            %
+            % IN
+            %
+            % lambda : array of CM dimension indices (== mandatory
+            % parameter in method 'time')
+            % n      : array of configuration orders
+            %
+            % OUT
+            %
+            % b_n : location of stored configurations, which match ANY of
+            % the supplied condition pairs lambda(i), n(i)
             
             if ( length( lambda ) ~= length( n ) )
                 
@@ -1880,6 +1951,43 @@ classdef CoMoTk < matlab.mixin.Copyable
         end
         
         function res = sum ( cm, param )            
+            % return the weighted CM sum and calculated derivatives
+            %
+            % IN
+            %
+            % structure param (if empty, complete sum over all stored
+            % configurations is returned)
+            %
+            % param.b_n : over which configurations shall the sum be taken?
+            % (optional)
+            % (if field is missing, the sum is over all stored
+            % configurations)
+            %
+            % param.omega : bulk off-resonance [ rad / ms ] (optional)
+            % (default == 0, if field is missing)
+            %
+            % param.x : position vector [ um ] (optional)
+            % (== zero vector, if field is missing)
+            %
+            % param.w_n : external weighting factors (optional, if supplied, 
+            % size needs to match the number of addends in the CM sum)
+            %
+            % decay due to inhomogeneous broadening is taken into account,
+            % if cm.inhomogeneous_decay is nonempty
+            % (more detailed information about the format of this function
+            % can be found above at the associated property
+            %
+            % OUT
+            %
+            % res.xy : transverse component (conventional transverse
+            % magnetization)
+            %
+            % res.z  : longitudinal component
+            %
+            % res.dxy.dX : derivative of transverse component with respect
+            % to X
+            %
+            % res.dx.dX : same for longitudinal component
             
             if ( ~isempty( param ) && isfield( param, 'b_n' ) )
                 
@@ -1912,7 +2020,6 @@ classdef CoMoTk < matlab.mixin.Copyable
             
             % off-resonance and chemical shift (if applicable )
             
-%            w_n_ = exp( - 1i .* ( omega_ + cm.dom ) .* reshape( cm.tau_n( b_n_ ), [ 1, n_c ] ) );
             w_n_ = exp( - 1i .* omega_ .* reshape( cm.tau_n( b_n_ ), [ 1, n_c ] ) );
             
             % *= gradient effects (optional)
@@ -1927,7 +2034,7 @@ classdef CoMoTk < matlab.mixin.Copyable
             
             if ( ~isempty( cm.inhomogeneous_decay ) )
                 
-                w_n_ = w_n_ .* cm.inhomogeneous_decay( cm.tau_n( b_n_ ) );
+                w_n_ = w_n_ .* cm.inhomogeneous_decay( cm.tau_n( b_n_ ), param );
                 
             end
             
@@ -1980,15 +2087,85 @@ classdef CoMoTk < matlab.mixin.Copyable
         
         %% Lorentz function
         
-        function res = lorentz_decay ( cm, tau )
+        function res = lorentz_decay ( cm, tau, param )
+            % calculates Lorentz decay exp( - tau * R2p )
+            %
+            % param.R2p : relaxation rate R2^\prime [ 1 / ms ] (mandatory parameter)
            
-            res = exp( - cm.R2p .* reshape( abs( tau ), [ 1, length( tau ) ] ) );
+            if ( isfield( param, 'R2p' ) )
+                
+                R2p = param.R2p;
+                
+                if ( length( R2p ) ~= cm.n_tissues && length( R2p ) ~= 1 )
+                    
+                    error( 'length( R2p ) must be equal to the number of tissues or one.' );
+                    
+                end
+                
+                if ( length( R2p ) == cm.n_tissues )
+                    
+                    R2p = reshape( R2p, [ cm.n_tissues, 1 ] );
+                    
+                else
+                    
+                    R2p = repmat( R2p, [ cm.n_tissues, 1 ] );
+                    
+                end
+                                
+                res = exp( - R2p .* reshape( abs( tau ), [ 1, length( tau ) ] ) );
+                               
+            else
+                
+                error( 'R2p not specified in lorentz_decay' );
+                
+            end
+            
+        end
+        
+        function res = spherical_decay ( cm, tau, param )
+            % decay due to spherical frequency distribution
+            %
+            % param.bw_sphere : max. off-resonance frequency magnitude 
+            % [ rad / ms ] (mandatory parameter)
+            
+            if ( isfield( param, 'bw_sphere' ) )
+                
+                sigma = 0.5 .* param.bw_sphere;
+                
+                if ( length( sigma ) ~= cm.n_tissues && length( sigma ) ~= 1 )
+                    
+                    error( 'length( bw_sphere ) must be equal to the number of tissues or one.' );
+                    
+                end
+                
+                if ( length( sigma ) == cm.n_tissues )
+                    
+                    sigma = reshape( sigma, [ cm.n_tissues, 1 ] );
+                    
+                else
+                    
+                    sigma = repmat( sigma, [ cm.n_tissues, 1 ] );
+                    
+                end
+                                    
+                st_ = sigma .* reshape( tau, [ 1, length( tau ) ] );
+                    
+                res = besselj( 1, 2 .* st_ ) ./ ( st_ );
+
+                res( st_ == 0 ) = 1;
+                    
+            else
+                
+                error( 'bw_sphere not specified in spherical_decay' );
+                
+            end
             
         end
         
         %% various checks for debugging purposes
         
         function b_is_ok = check_state ( cm, context )
+            % used for debugging purposes
             
             fprintf( 1, 'check_state: %s\n', context );
             
@@ -2096,8 +2273,10 @@ classdef CoMoTk < matlab.mixin.Copyable
     end
     
     methods ( Access = private )
+        % several helper routines
         
         function check_mandatory_parameters ( cm )
+            % Check, whether the mandatory tissue parameters have been set.
             
             if ( isempty( cm.R1 ) || ...
                     isempty( cm.R2 ) || ...
@@ -2110,6 +2289,7 @@ classdef CoMoTk < matlab.mixin.Copyable
         end
 
         function update_tau_n ( cm )
+            % update cm.tau_n and cm.b_tau_n
             
             b_todo = cm.b_n & ~cm.b_tau_n;
             
@@ -2127,6 +2307,7 @@ classdef CoMoTk < matlab.mixin.Copyable
         end
         
         function update_p_n ( cm )
+            % update cm.p_n
             
             b_todo = cm.b_n & ~cm.b_p_n;
             
@@ -2144,6 +2325,7 @@ classdef CoMoTk < matlab.mixin.Copyable
         end
         
         function update_En_exp ( cm, b_todo, n_todo, idx_time )
+            % update relaxation matrices (in presence of diffusion)
                                     
             if ( cm.diffusion == CoMoTk.Iso_Diff )
 
@@ -2369,6 +2551,7 @@ classdef CoMoTk < matlab.mixin.Copyable
         end
         
         function update_relaxation ( cm, idx_time )
+            % update relaxation (without and with diffusion)
             
             % transverse and longitudinal relaxation
             
@@ -2418,6 +2601,7 @@ classdef CoMoTk < matlab.mixin.Copyable
         end
         
         function [ idx_time, b_n_new, b_up_free_time, b_do_free_time ] = pre_time ( cm, lambda )
+            % preparations before executing a time interval
             
             if ( cm.options.verbose )
                 
@@ -2670,6 +2854,7 @@ classdef CoMoTk < matlab.mixin.Copyable
         end
         
         function post_time ( cm, b_n_new )
+            % several parameter updates after time interval
             
             cm.b_n = b_n_new;
             cm.n_conf = sum( cm.b_n );
@@ -2684,7 +2869,7 @@ classdef CoMoTk < matlab.mixin.Copyable
         end
                 
         function b_is_ok = meltdown ( cm )
-            %% remove negligible configurations
+            % remove negligible configurations
             
             b_is_ok = true;
             
@@ -3040,6 +3225,7 @@ classdef CoMoTk < matlab.mixin.Copyable
         end
         
         function [ rng_n, rng_d ] = reallocate_nd ( cm )
+            % reallocate new space, if necessary
             
             [ alloc_n_old, alloc_d_old ] = size( cm.n );
             

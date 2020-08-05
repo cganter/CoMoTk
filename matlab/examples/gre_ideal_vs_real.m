@@ -9,24 +9,23 @@ opt = [];
 str = [];
 
 par.ssfp = 'balanced';
-par.T1 = 1000;
-par.T2 = 100;
+par.T1 = 500;
+par.T2 = 50;
 par.D = 0;
 par.resolution = 1;
 par.TR = 5;
-par.TE = 2;
-par.num_TR = 5;
+par.TE = 1;
+par.num_TR = 50;
 par.B1 = 1;
-par.fa = 50;
-par.ph_inc = 180;
+par.fa = 30;
+par.ph_inc = 0;
 par.phd_inc = 0;
-par.res = 1;
 par.sl_th = 1;
 par.t_rf = 1;
-par.supp_rf = 100;
-par.qual_rf = 3;
+par.supp_rf = 50;
+par.qual_rf = 1 : 3;
 par.filt_rf = 'Hamming';
-par.epsilon = 1e-4;
+par.epsilon = 1e-6;
 par.verbose = 'False';
 
 opt.ssfp = { 'balanced', 'unbalanced' };
@@ -96,55 +95,30 @@ while ( true )
     ph_rad = ph_deg .* ( pi / 180 );
     sl_th_um = 1000 * par.sl_th;
     
-    %% set the RF pulse profile
-    % as described in the Handbook of MRI for a SINC pulse +/- Hamming filter
+    % slice profile locations
     
-    % Number of RF support points
-    %
-    % as in SLR optimization we approximate the RF pulse as an alternating train of
-    %
-    % *   par.supp_rf + 1 instantaneous RF pulses, separated by
-    % *   par.supp_rf     intervals of constant gradient amplitude
+    n_sl = 501;
+
+    x = zeros( 3, n_sl );
+    x( 3, : ) = linspace( - 1.5 * sl_th_um, 1.5 * sl_th_um, n_sl );
     
-    % duration of small intervals
+    % ideal slice profile at TE
     
-    tau_rf = par.t_rf / par.supp_rf;
+    sp_ideal = zeros( 1, n_sl );
+    sp_ideal( abs( x( 3, : ) ) < 0.5 * sl_th_um ) = sin( fa_rad );
     
-    % support points and flip angles of instantaneous RF pulses (\propto B1 profile)
-    
-    t = par.qual_rf .* linspace( -1, 1, par.supp_rf + 1 );
-    
-    if ( isequal( par.filt_rf, 'Hamming' ) )
+    if ( isequal( par.ssfp, 'unbalanced' ) )
         
-        al = ( 0.54 + 0.46 .* cos( pi .* t ./ par.qual_rf ) ) .* sinc( t );
-        
-    elseif ( isequal( par.filt_rf, 'None' ) )
-        
-        al = sinc( t );
-        
-    end
-    
-    % normalization: at the center of the slice profile, we need the desired flip angle
-    
-    al_rad = al .* ( fa_rad / sum( al ) );
-    
-    % set verbosity
-    
-    if ( isequal( par.verbose, 'True' ) )
-        
-        verbose = true;
+        sp_ideal = sp_ideal .* exp( - par.TE / par.T2 );
         
     else
         
-        verbose = false;
-        
+        sp_ideal = sp_ideal .* exp( - 0.5 * par.TR / par.T2 );
+
     end
-        
-    % in-plane crusher gradient moment
-    
-    p_cru = 2 * pi / ( 1000 * par.resolution );
-    
-    %% initialize configuration model (idealized sequence)
+                        
+    %% ideal sequence with instantaneous RF pulses
+    % initialize configuration model
 
     cm_ideal = CoMoTk;
     
@@ -207,105 +181,14 @@ while ( true )
     % start with longitudinal magnetization
         
     cm_ideal.init_configuration ( [ 0; 0; 1 ] );
-                
-    %% initialize configuration model (real sequence)
-
-    cm_real = CoMoTk;
     
-    % mandatory tissue parameters
-    
-    cm_real.R1 = 1 / par.T1;
-    cm_real.R2 = 1 / par.T2;
-    cm_real.D = par.D;
-    
-    % further parameters
-    
-    cm_real.B1 = par.B1;
-    
-    % approximate real RF pulses as sequence of small instantaneous pulses ...
-
-    RF_real = cell( par.supp_rf + 1, par.num_TR );
-    
-    for idx_TR = 1 : par.num_TR
-        
-        for idx_RF = 1 : par.supp_rf + 1
-        
-            RF_real{ idx_RF, idx_TR }.FlipAngle = al_rad( idx_RF );
-            RF_real{ idx_RF, idx_TR }.Phase  = ph_rad( idx_TR );
-        
-        end
-    
-    end
-        
-    % ... separated by small time intervals of constant duration and gradient moment
-
-    DeltaTime = [];
-    DeltaTime.lambda = 1;
-    DeltaTime.tau = par.t_rf / par.supp_rf;
-    
-    % the associated gradient moment is defined by RF bandwidth, pulse shape and slice thickness:
-    
-    % RF pulse bandwidth
-    
-    f = 2 * par.qual_rf / par.t_rf;
-    
-    % total moment of slice selection gradient
-    
-    p_sl = 2 * pi * f * par.t_rf / sl_th_um;
-    
-    % split into par.supp_rf intervals
-    
-    DeltaTime.p = [ 0; 0; p_sl / par.supp_rf ];
-
-    % prepare remaining time periods
-    
-    RF_to_Echo_real = [];
-    Echo_to_RF_real = [];
-    
-    if ( isequal( par.ssfp, 'unbalanced' ) )
-        
-        RF_to_Echo_real.lambda = 2; % unique index
-        RF_to_Echo_real.tau = par.TE - par.t_rf / 2;
-        RF_to_Echo_real.p = [ 0; 0; - p_sl / 2 ];
-        
-        Echo_to_RF_real.lambda = 3;
-        Echo_to_RF_real.tau = par.TR - par.TE - par.t_rf / 2;
-        Echo_to_RF_real.p = [ p_cru; 0; - p_sl / 2 ];
-        
-    elseif ( isequal( par.ssfp, 'balanced' ) )
-        
-        RF_to_Echo_real.lambda = 2; % unique index
-        RF_to_Echo_real.tau = ( par.TR - par.t_rf ) / 2; % for balanced SSFP, we consider a centered echo
-        RF_to_Echo_real.p = [ 0; 0; - p_sl / 2 ];
-        
-        Echo_to_RF_real = RF_to_Echo_real; % the two intervals are equivalent (duration & (zero) gradient moment)
-        
-    end
-    
-    % set options
-    
-    options = cm_real.options;
-    
-    options.alloc_n = 10000;  % CoMoTk will allocate more, if needed
-    options.alloc_d = 3;     % enough for both variants (unbalanced == 3, balanced == 2)
-    options.epsilon = par.epsilon;
-    options.verbose = verbose;
-    
-    cm_real.options = options;
-    
-    % start with longitudinal magnetization
-    
-    cm_real.init_configuration ( [ 0; 0; 1 ] );
-                
-    %% allocate space for results
+    % allocate space for results
         
     m_ideal = zeros( par.num_TR, 1 );
-    m_real = zeros( par.num_TR, 1 );
 
     %% initialize timing
     
     t_id = zeros( par.num_TR, 1 );
-    t_re = zeros( par.num_TR, 1 );
 
     tic;
     t_tmp = toc;
@@ -368,75 +251,268 @@ while ( true )
         t_tmp = toc;
         t_id( idx_TR ) = t_id( idx_TR ) + t_tmp;        
         
-        %% execute (b)SSFP with real RF pulse ...
-        
-        if ( idx_TR > 1 ) % not needed before first RF pulse
-            
-            cm_real.time( Echo_to_RF_real );
-            
-        end
-
-        for idx_RF = 1 : par.supp_rf
-        
-            cm_real.RF( RF_real{ idx_RF, idx_TR } );
-
-            cm_real.time( DeltaTime );
-        
-        end
-        
-        cm_real.RF( RF_real{ par.supp_rf + 1, idx_TR } );
-
-        cm_real.time( RF_to_Echo_real );
-
-        %% ... and extract the result
-            
-        if ( isequal( par.ssfp, 'unbalanced' ) )
-                        
-            % we assume a conventional FID sequence with crusher AFTER the echo
-            % i.e. in the interval 'Echo_to_RF'
-
-            % like in the real case, the associated configuration must be zero
-            % since the signal from nonzero orders is (hopefully) dephased 
-            
-            select_conf = [];
-            select_conf.b_n = cm_real.find( Echo_to_RF_real.lambda, 0 );
-                                    
-        elseif ( isequal( par.ssfp, 'balanced' ) )
-            
-            % balanced SSFP has no crusher gradients
-            % in absence of gradient dephasing, all occupied configurations contribute
-
-            select_conf = [];
-            select_conf.b_n = cm_real.b_n;
-
-        end
-        
-        % in both cases and unlike the real case, we *further* need to integrate over the slice profile
-            
-        select_conf.b_n = select_conf.b_n & ...
-            reshape( abs( cm_real.p_n( 3, : ) ) < 0.5 * abs( DeltaTime.p( 3 ) ), size( select_conf.b_n ) );
-        
-                % calculate the partial sum
-        
-        res = cm_real.sum( select_conf );
-        
-        % save the echo
-        
-        m_real( idx_TR ) = res.xy;
-            
-        % time spent for the real part
-        
-        t_re( idx_TR ) = - t_tmp;
-        t_tmp = toc;
-        t_re( idx_TR ) = t_re( idx_TR ) + t_tmp;        
-        
         fprintf( 1, 'ideal RF = %9.3f sec\n', t_id( idx_TR ) );
-        fprintf( 1, 'real RF  = %9.3f sec\n', t_re( idx_TR ) );
         
     end
     
     fprintf( 1, 'ideal RF =\t %9.3f sec total\n', sum( t_id ) );
-    fprintf( 1, 'real RF  =\t %9.3f sec total\n', sum( t_re ) );
+    
+    %% now for the sequence(s) with realistic slice profiles
+    % more than one profile with different number of zero-crossings are
+    % allowed
+    
+    zc = sort( par.qual_rf );
+    n_prof = length( zc );
+    
+    % allocate space for results
+        
+    m_real = zeros( par.num_TR, n_prof );
+    
+    % as described in the Handbook of MRI for a SINC pulse +/- Hamming filter
+    
+    % Number of RF support points
+    %
+    % as in SLR optimization we approximate the RF pulse as an alternating train of
+    %
+    % *   par.supp_rf + 1 instantaneous RF pulses, separated by
+    % *   par.supp_rf     intervals of constant gradient amplitude
+    
+    % duration of small intervals
+    
+    tau_rf = par.t_rf / par.supp_rf;
+    
+    % allocate space for slice profile
+    
+    sp_real = zeros( n_prof, n_sl );
+
+    % now things depend on the profile
+    
+    for ip = 1 : n_prof
+         
+        % support points and flip angles of instantaneous RF pulses (\propto B1 profile)
+        
+        t = zc( ip ) .* linspace( -1, 1, par.supp_rf + 1 );
+        
+        if ( isequal( par.filt_rf, 'Hamming' ) )
+            
+            al = ( 0.54 + 0.46 .* cos( pi .* t ./ zc( ip ) ) ) .* sinc( t );
+            
+        elseif ( isequal( par.filt_rf, 'None' ) )
+            
+            al = sinc( t );
+            
+        end
+        
+        % normalization: at the center of the slice profile, we need the desired flip angle
+        
+        al_rad = al .* ( fa_rad / sum( al ) );
+        
+        % set verbosity
+        
+        if ( isequal( par.verbose, 'True' ) )
+            
+            verbose = true;
+            
+        else
+            
+            verbose = false;
+            
+        end
+        
+        % in-plane crusher gradient moment
+        
+        p_cru = 2 * pi / ( 1000 * par.resolution );
+            
+        %% initialize configuration model (real sequence)
+        
+        cm_real = CoMoTk;
+        
+        % mandatory tissue parameters
+        
+        cm_real.R1 = 1 / par.T1;
+        cm_real.R2 = 1 / par.T2;
+        cm_real.D = par.D;
+        
+        % further parameters
+        
+        cm_real.B1 = par.B1;
+        
+        % approximate real RF pulses as sequence of small instantaneous pulses ...
+        
+        RF_real = cell( par.supp_rf + 1, par.num_TR );
+        
+        for idx_TR = 1 : par.num_TR
+            
+            for idx_RF = 1 : par.supp_rf + 1
+                
+                RF_real{ idx_RF, idx_TR }.FlipAngle = al_rad( idx_RF );
+                RF_real{ idx_RF, idx_TR }.Phase  = ph_rad( idx_TR );
+                
+            end
+            
+        end
+        
+        % ... separated by small time intervals of constant duration and gradient moment
+        
+        DeltaTime = [];
+        DeltaTime.lambda = 1;
+        DeltaTime.tau = par.t_rf / par.supp_rf;
+        
+        % the associated gradient moment is defined by RF bandwidth, pulse shape and slice thickness:
+        
+        % RF pulse bandwidth
+        
+        f = 2 * zc( ip ) / par.t_rf;
+        
+        % total moment of slice selection gradient
+        
+        p_sl = 2 * pi * f * par.t_rf / sl_th_um;
+        
+        % split into par.supp_rf intervals
+        
+        DeltaTime.p = [ 0; 0; p_sl / par.supp_rf ];
+        
+        % prepare remaining time periods
+        
+        RF_to_Echo_real = [];
+        Echo_to_RF_real = [];
+        
+        if ( isequal( par.ssfp, 'unbalanced' ) )
+            
+            RF_to_Echo_real.lambda = 3; % unique index
+            RF_to_Echo_real.tau = par.TE - par.t_rf / 2;
+            RF_to_Echo_real.p = [ 0; 0; - p_sl / 2 ];
+            
+            Echo_to_RF_real.lambda = 2;
+            Echo_to_RF_real.tau = par.TR - par.TE - par.t_rf / 2;
+            Echo_to_RF_real.p = [ p_cru; 0; - p_sl / 2 ];
+            
+        elseif ( isequal( par.ssfp, 'balanced' ) )
+            
+            RF_to_Echo_real.lambda = 2; % unique index
+            RF_to_Echo_real.tau = ( par.TR - par.t_rf ) / 2; % for balanced SSFP, we consider a centered echo
+            RF_to_Echo_real.p = [ 0; 0; - p_sl / 2 ];
+            
+            Echo_to_RF_real = RF_to_Echo_real; % the two intervals are equivalent (duration & (zero) gradient moment)
+            
+        end
+        
+        % set options
+        
+        options = cm_real.options;
+        
+        options.alloc_n = 10000;  % CoMoTk will allocate more, if needed
+        options.alloc_d = 3;     % enough for both variants (unbalanced == 3, balanced == 2)
+        options.epsilon = par.epsilon;
+        options.verbose = verbose;
+        
+        cm_real.options = options;
+        
+        % start with longitudinal magnetization
+        
+        cm_real.init_configuration ( [ 0; 0; 1 ] );
+        
+        %% initialize timing
+        
+        t_re = zeros( par.num_TR, 1 );
+        
+        tic;
+        t_tmp = toc;
+        
+        %%  loop over TR
+        
+        for idx_TR = 1 : par.num_TR
+            
+            fprintf( 1, 'Profile %d / %d, i = %d / %d\n', ip, n_prof, idx_TR, par.num_TR );
+            
+            %% execute (b)SSFP with real RF pulse ...
+            
+            if ( idx_TR > 1 ) % not needed before first RF pulse
+                
+                cm_real.time( Echo_to_RF_real );
+                
+            end
+            
+            for idx_RF = 1 : par.supp_rf
+                
+                cm_real.RF( RF_real{ idx_RF, idx_TR } );
+                
+                cm_real.time( DeltaTime );
+                
+            end
+            
+            cm_real.RF( RF_real{ par.supp_rf + 1, idx_TR } );
+        
+            cm_real.time( RF_to_Echo_real );
+
+            %% ... and extract the result
+            % in the first interval we extract the slice profile
+
+            if ( idx_TR == 1 )
+                                          
+                for i = 1 : n_sl
+                    
+                    % we sum over all configurations (third argument == [])
+                    
+                    param = [];
+                    param.omega = 0;
+                    param.x = x( :, i );
+                    
+                    res = cm_real.sum( param );
+                    
+                    sp_real( ip, i ) = abs( res.xy );
+                    
+                end
+                
+            end
+            
+            if ( isequal( par.ssfp, 'unbalanced' ) )
+                
+                % we assume a conventional FID sequence with crusher AFTER the echo
+                % i.e. in the interval 'Echo_to_RF'
+                
+                % like in the real case, the associated configuration must be zero
+                % since the signal from nonzero orders is (hopefully) dephased
+                
+                select_conf = [];
+                select_conf.b_n = cm_real.find( Echo_to_RF_real.lambda, 0 );
+                
+            elseif ( isequal( par.ssfp, 'balanced' ) )
+                
+                % balanced SSFP has no crusher gradients
+                % in absence of gradient dephasing, all occupied configurations contribute
+                
+                select_conf = [];
+                select_conf.b_n = cm_real.b_n;
+                
+            end
+            
+            % in both cases and unlike the real case, we *further* need to integrate over the slice profile
+            
+            select_conf.b_n = select_conf.b_n & ...
+                reshape( abs( cm_real.p_n( 3, : ) ) < 0.5 * abs( DeltaTime.p( 3 ) ), size( select_conf.b_n ) );
+            
+            % calculate the partial sum
+            
+            res = cm_real.sum( select_conf );
+            
+            % save the echo
+            
+            m_real( idx_TR, ip ) = res.xy;
+            
+            % time spent for the real part
+            
+            t_re( idx_TR ) = - t_tmp;
+            t_tmp = toc;
+            t_re( idx_TR ) = t_re( idx_TR ) + t_tmp;
+            
+            fprintf( 1, 'real RF  = %9.3f sec\n', t_re( idx_TR ) );
+            
+        end
+        
+        fprintf( 1, 'real RF  =\t %9.3f sec total\n', sum( t_re ) );
+        
+    end
     
     %% Show results
 
@@ -450,20 +526,103 @@ while ( true )
         
     end
    
-    sc = abs( m_ideal( 1 ) / m_real( 1 ) );
+    %%
+    
+    if ( isequal( par.ssfp, 'unbalanced' ) )
 
-    subplot( 1, 1, 1 );
-    plot( te, abs( m_ideal ), te, sc .* abs( m_real ) );
-    legend( 'ideal', 'real' );
+        m_ideal = abs( m_ideal );
+        m_real = abs( m_real );
+        
+    else
+        
+        m_ideal = imag( m_ideal );
+        m_real = imag( m_real );
 
+    end
+        
+    loc = x( 3, : ) .* 0.001;
+    
+    %%
+    
+    hold off;
+    
+    ax = subplot( 1, 2, 1 );
+
+    plot( te, m_ideal, 'DisplayName', 'ideal' );
+    
+    legend( '-DynamicLegend', 'Location', 'southeast' );
+    
+    hold all;
+    
+    for ip = n_prof : -1 : 1
+
+        sc = abs( m_ideal( 1 ) / m_real( 1, ip ) );
+        plot( te, sc .* m_real( :, ip ), 'DisplayName', [ 'zc = ', num2str( zc( ip ) ) ] );
+        
+        legend( 'Location', 'southeast' );
+
+    end
+     
+    ylabel( '$m_{xy}''''$', 'Interpreter', 'latex' );
+    xlabel( '$t$ [ms]', 'Interpreter', 'latex' );
+    xlim( [ 0, te( end ) ] );
+    ylim( [ -1.15, 0.7 ] );
+    
     if ( isequal( par.ssfp, 'unbalanced' ) )
         
-        title( 'SSFP' );
+        title( 'SSFP', 'Interpreter', 'latex' );
         
     elseif ( isequal( par.ssfp, 'balanced' ) )
         
-        title( 'bSSFP' );
+        title( 'Transient bSSFP Oscillations', 'Interpreter', 'latex' );
         
     end
+        
+    width = 14;
+    height = 7.5;
+    
+    set( gcf, 'Units', 'centimeters' );
+    set( gcf, 'Position', [ 0, 0, width, height ] );
+    set( gcf, 'Color', 'w' );
+    
+    delta = 0.01;
+    
+    ti = ax.TightInset;
+    left = ti(1) + delta;
+    bottom = ti(2) + delta;
+    ax_width = 0.5 - ti(1) - ti(3) - 2 * delta;
+    ax_height = 1 - ti(2) - ti(4) - 2 * delta;
+    ax.Position = [left bottom ax_width ax_height ];
+    
+    hold off;
+
+    ax = subplot( 1, 2, 2 );
+
+    plot( loc, sp_ideal );
+    
+    % legend( '-DynamicLegend' );
+    
+    hold all;
+    
+    for ip = n_prof : -1 : 1
+
+        % plot( loc, sp_real( ip, : ), 'DisplayName', [ 'zc = ', num2str( zc( ip ) ) ] );
+        plot( loc, sp_real( ip, : ) );
+
+    end
+    
+    title( 'Slice Profiles', 'Interpreter', 'latex' );
+    xlabel( 'position [mm]', 'Interpreter', 'latex' );
+    ylabel( '$\left|m_{xy}\right|$', 'Interpreter', 'latex' );    
+    xlim( [ -1.5, 1.5 ] );
+    
+    ti = ax.TightInset;
+    left = 0.5 + ti(1) + delta;
+    bottom = ti(2) + delta;
+    ax_width = 0.5 - ti(1) - ti(3) - 2 * delta;
+    ax_height = 1 - ti(2) - ti(4) - 2 * delta;
+    ax.Position = [left bottom ax_width ax_height ];
+    
+    %%
     
 end

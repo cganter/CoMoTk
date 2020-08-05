@@ -200,8 +200,9 @@ while ( true )
     plot( t, mz_HS1_rapid, '-b', t, mz_Chirp_rapid, '-r', t, mz_HS1, '--b' );
     
     xlabel( '$t$ [ms]', 'Interpreter', 'latex' );
-    title( '$m_z\left(t\right)$', 'Interpreter', 'latex' );
-     
+    ylabel( '$m_z\left(t\right)$', 'Interpreter', 'latex' );
+    title( 'Adiabatic Transient Phase', 'Interpreter', 'latex' );
+    
     width = 14;
     height = 7.5;
 
@@ -222,7 +223,8 @@ while ( true )
     plot( Omega ./ ( 2 * pi ), mz_freq_HS1_rapid, '-b', Omega ./ ( 2 * pi ), mz_freq_Chirp_rapid, '-r', Omega ./ ( 2 * pi ), mz_freq_HS1, '--b' );
         
     xlabel( '$\omega/2\pi$ [kHz]', 'Interpreter', 'latex' );
-    title( '$m_z\left(\omega\right)$', 'Interpreter', 'latex' );
+    ylabel( '$m_z\left(\omega\right)$', 'Interpreter', 'latex' );
+    title( 'Inversion Profile', 'Interpreter', 'latex' );
     legend( 'HS1, $T_2 = \infty$', 'chirp, $T_2 = \infty$', [ 'HS1, $T_2 = $ ', num2str( par.T2 ) ], 'Interpreter', 'latex', 'Location', 'north' );
 
     ti = ax.TightInset;

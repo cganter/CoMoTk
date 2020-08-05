@@ -257,8 +257,9 @@ while ( true )
     stem( t, alpha ./ max( alpha ), 'filled' );
     xlim( [ - 0.5 * par.t_rf 0.5 * par.t_rf ] );
     ylim( [ min( alpha ./ max( alpha ) ) - 0.05, 1.05 ] );
-    xlabel( 'time [ms]' );
-    title( 'RF pulse' );
+    xlabel( '$t$ [ms]', 'Interpreter', 'latex' );
+    ylabel( '$\alpha_\nu/\alpha_{nom}$', 'Interpreter', 'latex' );
+    title( 'RF Pulse', 'Interpreter', 'latex' );
 
     width = 18;
     height = 6;
@@ -278,9 +279,10 @@ while ( true )
     
     ax = subplot( 1, 3, 2 );
     plot( loc, abs( m_xy_CM ), loc, abs( m_xy_SLR ) );
-    legend( 'CM', 'SLR', 'Location', 'south' );
-    axl = xlabel( 'position [mm]' );
-    title( 'transverse part' );
+    legend( 'CM', 'SLR', 'Interpreter', 'latex', 'Location', 'south' );
+    xlabel( 'position [mm]', 'Interpreter', 'latex' );
+    ylabel( '$\left|m_{xy}\right|$', 'Interpreter', 'latex' );
+    title( 'Transverse Part', 'Interpreter', 'latex');
 
     ti = ax.TightInset;
     left = 0.3333 + ti(1) + delta;
@@ -291,9 +293,10 @@ while ( true )
     
     ax = subplot( 1, 3, 3 );
     plot( loc, m_z_CM, loc, m_z_SLR );
-    legend( 'CM', 'SLR', 'Location', 'north' );
-    xlabel( 'position [mm]' );
-    title( 'longitudinal part' );
+    legend( 'CM', 'SLR', 'Interpreter', 'latex', 'Location', 'north' );
+    xlabel( 'position [mm]', 'Interpreter', 'latex' );
+    ylabel( '$m_z$', 'Interpreter', 'latex' );
+    title( 'Longitudinal Part', 'Interpreter', 'latex' );
     
     ti = ax.TightInset;
     left = 0.6667 + ti(1) + delta;
