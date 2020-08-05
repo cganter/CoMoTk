@@ -1,14 +1,14 @@
 
 # Table of Contents
 
-1.  [Background](#orgb4a0678)
-2.  [Installation](#org2b9fe90)
-3.  [Small Example](#org2525229)
-4.  [Current State](#orgea046bb)
-5.  [Feedback](#org869e72b)
+1.  [Background](#orgb3368a2)
+2.  [Installation](#org26d6e86)
+3.  [Small Example](#org7589108)
+4.  [Current State](#org3a14522)
+5.  [Feedback](#orga4160af)
 
 
-<a id="orgb4a0678"></a>
+<a id="orgb3368a2"></a>
 
 # Background
 
@@ -36,11 +36,13 @@ The following non-exhaustive list shows a few possible options and alternatives:
     -   periodic vs. non-periodic
     -   transient phase vs. steady-state
 
-`CoMoTk` is a general purpose simulation tool (written in Matlab), designed to handle essentially all the aforementioned cases. 
-It is based upon a generalized version of the so-called configuration model, which will be described elsewhere.
+`CoMoTk` is a general purpose simulation tool (currently implemented in Matlab), designed to handle essentially all the 
+aforementioned cases. 
+It is based upon a multidimensional version of the configuration model (CM), which will be described elsewhere (link will be
+provided as soon as available).
 
 
-<a id="org2b9fe90"></a>
+<a id="org26d6e86"></a>
 
 # Installation
 
@@ -49,11 +51,11 @@ Just add the `matlab/` folder with subdirectories to your Matlab path.
 **Important**: A Matlab version of **R2016b** or later is required, since implicit expansion is used a lot.
 
 
-<a id="org2525229"></a>
+<a id="org7589108"></a>
 
 # Small Example
 
-The following example should give a first impression of how to work with the toolkit, while the [User Guide](doc/CoMoTk_UserGuide.pdf) gives a complete overview of the available options. It is also recommended to look at the scripts in the `test` and `examples` folders, which cover typical application scenarios and may serve as templates for own projects. To make full use of the toolkit, it is important to understand the theory behind the configuration model, which will be presented in an article (link will be given, as soon as available).
+The following example should give a first impression of how to work with the matlab toolkit, while the [User Guide](doc/CoMoTk_matlab.pdf) gives a complete overview of the available options. It is also recommended to look at the scripts in the `examples` folder, which cover typical application scenarios and may serve as templates for own projects. To make full use of the toolkit, it is important to understand the theory behind the configuration model, which will be presented in an article (link will be given, as soon as available).
 
     % Example: sample FID of SSFP during transient phase 
     
@@ -70,11 +72,11 @@ The following example should give a first impression of how to work with the too
     rf.Phase = phase;               % phase [rad]
     
     % set time interval from RF pulse to echo
-    te.mu = 1;                      % unique index of time interval
+    te.lambda = 1;                  % unique index of time interval
     te.tau = TE;                    % duration
     
     % set time interval from echo to RF pulse (includes crusher)
-    crusher.mu = 2;                 % unique index of time interval
+    crusher.lambda = 2;             % unique index of time interval
     crusher.tau = TR - TE;          % duration
     
     % desired number of samples
@@ -109,7 +111,7 @@ The following example should give a first impression of how to work with the too
     % done
 
 
-<a id="orgea046bb"></a>
+<a id="org3a14522"></a>
 
 # Current State
 
@@ -150,17 +152,33 @@ folder. The following table gives a brief overview on the actual state.
 
 
 <tr>
-<td class="org-left">Derivatives</td>
+<td class="org-left">Magnetization transfer/exchange</td>
 <td class="org-left">yes</td>
+<td class="org-left">yes</td>
+</tr>
+
+
+<tr>
+<td class="org-left">Bulk motion</td>
+<td class="org-left">yes</td>
+<td class="org-left">yes</td>
+</tr>
+
+
+<tr>
+<td class="org-left">Derivatives</td>
+<td class="org-left">subset</td>
 <td class="org-left">yes</td>
 </tr>
 </tbody>
 </table>
 
-It will be updated.
+**Please note:** The current proof-of-concept implementation only supports single core computation and the simulation of more involved
+sequences may become rather slow. This is not a fundamental limitation, since the time-consuming part of the CM iteration 
+fully benefits from parallel computation. This limitation will be (hopefully) addressed in some future implementation.
 
 
-<a id="org869e72b"></a>
+<a id="orga4160af"></a>
 
 # Feedback
 
