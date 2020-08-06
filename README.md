@@ -1,14 +1,14 @@
 
 # Table of Contents
 
-1.  [Background](#orgb3368a2)
-2.  [Installation](#org26d6e86)
-3.  [Small Example](#org7589108)
-4.  [Current State](#org3a14522)
-5.  [Feedback](#orga4160af)
+1.  [Background](#org505c544)
+2.  [Installation](#orga8ffa1f)
+3.  [Small Example](#orgcb19f41)
+4.  [Current State](#orgae239dc)
+5.  [Feedback](#orga6c1ebe)
 
 
-<a id="orgb3368a2"></a>
+<a id="org505c544"></a>
 
 # Background
 
@@ -42,7 +42,7 @@ It is based upon a multidimensional version of the configuration model (CM), whi
 provided as soon as available).
 
 
-<a id="org26d6e86"></a>
+<a id="orga8ffa1f"></a>
 
 # Installation
 
@@ -51,7 +51,7 @@ Just add the `matlab/` folder with subdirectories to your Matlab path.
 **Important**: A Matlab version of **R2016b** or later is required, since implicit expansion is used a lot.
 
 
-<a id="org7589108"></a>
+<a id="orgcb19f41"></a>
 
 # Small Example
 
@@ -85,9 +85,6 @@ The following example should give a first impression of how to work with the mat
     % allocate space for results
     m_xy = zeros( n_TR, 1 );
     
-    % set initial state (here: pure longitudinal magnetization)
-    cm.init_configuration ( [ 0; 0; 1 ] );  
-    
     % execute sequence loop
     for i = 1 : n_TR                
     
@@ -97,11 +94,13 @@ The following example should give a first impression of how to work with the mat
       % time to echo
       cm.time( te );               
     
-      % FID == all configurations with no (0) dephasing by crusher
+      % only magnetization pathways with no (0) dephasing by crusher contribute to the FID signal:
       fid.b_n = cm.find( crusher, 0 );
     
       % extract result
       res = cm.sum( fid );
+    
+      % store transverse magnetization
       m_xy( i ) = res.xy;
     
       % time to next RF pulse (includes crusher)
@@ -111,7 +110,7 @@ The following example should give a first impression of how to work with the mat
     % done
 
 
-<a id="org3a14522"></a>
+<a id="orgae239dc"></a>
 
 # Current State
 
@@ -167,7 +166,7 @@ folder. The following table gives a brief overview on the actual state.
 
 <tr>
 <td class="org-left">Derivatives</td>
-<td class="org-left">subset</td>
+<td class="org-left">partly</td>
 <td class="org-left">yes</td>
 </tr>
 </tbody>
@@ -178,7 +177,7 @@ sequences may become rather slow. This is not a fundamental limitation, since th
 fully benefits from parallel computation. This limitation will be (hopefully) addressed in some future implementation.
 
 
-<a id="orga4160af"></a>
+<a id="orga6c1ebe"></a>
 
 # Feedback
 
