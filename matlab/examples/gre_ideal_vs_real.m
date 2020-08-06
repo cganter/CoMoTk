@@ -178,10 +178,6 @@ while ( true )
 
     cm_ideal.options = options;
     
-    % start with longitudinal magnetization
-        
-    cm_ideal.init_configuration ( [ 0; 0; 1 ] );
-    
     % allocate space for results
         
     m_ideal = zeros( par.num_TR, 1 );
@@ -407,10 +403,6 @@ while ( true )
         options.verbose = verbose;
         
         cm_real.options = options;
-        
-        % start with longitudinal magnetization
-        
-        cm_real.init_configuration ( [ 0; 0; 1 ] );
         
         %% initialize timing
         

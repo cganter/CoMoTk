@@ -138,10 +138,6 @@ while ( true )
             cm.R2 = 1 / par.T2( i_Tx );
             cm.D = par.D;
             
-            % start with longitudinal magnetization
-            
-            cm.init_configuration ( [ 0; 0; 1 ] );
-            
             %% approach steady state
             
             for i_TR = 1 : n_TR

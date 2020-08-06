@@ -153,6 +153,8 @@ while ( true )
         deg.D = 1;
         
     end
+    
+    var_.mu = 0.5 + rand( 1, par.tissues );
 
     var_.B1 = 1;
 
@@ -312,6 +314,7 @@ while ( true )
         cm.R1 = var.R1;
         cm.R2 = var.R2;
         cm.D = var.D;
+        cm.mu = var.mu;
         cm.B1 = var.B1;
         
         % get default options
@@ -325,10 +328,6 @@ while ( true )
         % set new options
         
         cm.options = options;
-        
-        % initialize everything
-        
-        cm.init_configuration ( [ zeros( 1, par.tissues ); zeros( 1, par.tissues ); ones( 1, par.tissues ) ] );
         
         % specify derivatives to calculate
         

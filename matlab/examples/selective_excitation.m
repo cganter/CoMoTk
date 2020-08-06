@@ -132,10 +132,6 @@ while ( true )
     
     cm.options = options;
     
-    % start with longitudinal magnetization
-    
-    cm.init_configuration ( [ 0; 0; 1 ] );
-    
     %% calculate slice selection and rephasing gradient moment
     
     % RF pulse bandwidth

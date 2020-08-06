@@ -139,14 +139,6 @@ while ( true )
     
     % default CoMoTk options are ok, no need to change them
     
-    % start with longitudinal magnetization
-    
-    ME_cm0.init_configuration ( [ 0, 0; 0, 0; 1 - in.ME_f, in.ME_f ] );
-    ME_cm.init_configuration ( [ 0, 0; 0, 0; 1 - in.ME_f, in.ME_f ] );
-
-    MT_cm0.init_configuration ( [ 0, 0; 0, 0; 1 - in.MT_f, in.MT_f ] );
-    MT_cm.init_configuration ( [ 0, 0; 0, 0; 1 - in.MT_f, in.MT_f ] );
-
     %% number of TR cycles to approach steady state
     
     num_TR = ceil( par.prep * max( [ in.ME_T1a, in.ME_T1b, in.MT_T1a, in.MT_T1b ] ) / par.TR );

@@ -168,10 +168,6 @@ while ( true )
     
     cm_exact.options = options;
     
-    % initialize everything
-    
-    cm_exact.init_configuration ( [ 0; 0; 1 ] );
-    
     % timing
     
     time_exact = zeros( 1, par.n_inter );
@@ -211,10 +207,6 @@ while ( true )
     % set new options
     
     cm_rapid.options = options;
-    
-    % initialize everything
-    
-    cm_rapid.init_configuration ( [ 0; 0; 1 ] );
     
     % timing
     

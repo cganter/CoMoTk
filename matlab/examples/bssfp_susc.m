@@ -60,11 +60,7 @@ while ( true )
     cm.R1 = 1 / par.T1;
     cm.R2 = 1 / par.T2;
     cm.D = 0;
-    
-    % initialize everything
-    
-    cm.init_configuration ( [ 0; 0; 1 ] );
-    
+        
     % RF parameters 
         
     RF_par = [];

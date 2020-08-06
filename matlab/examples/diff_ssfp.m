@@ -188,11 +188,6 @@ while ( true )
     cm_0.options = options;
     cm.options = options;
 
-    % start with longitudinal magnetization
-    
-    cm_0.init_configuration ( [ 0; 0; 1 ] );
-    cm.init_configuration ( [ 0; 0; 1 ] );
-    
     %% approach steady state
     
     for i = 1 : num_TR

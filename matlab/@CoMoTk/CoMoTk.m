@@ -99,7 +99,9 @@ classdef CoMoTk < matlab.mixin.Copyable
     
     properties ( SetAccess = private )
         
-        %% global options (to be set prior to calling CoMoTk.init_configuration)
+        b_prep = false;                                                    % is everything prepared?
+        
+        %% global options
         % the purpose of the alloc_* variables is to increase the numerical performance by minimizing
         % -> recalculation of identical quantities (alloc_RF)
         % -> reallocation of memory (alloc_d, alloc_n)
@@ -303,9 +305,9 @@ classdef CoMoTk < matlab.mixin.Copyable
             %
             % length must match the number of subtissues (e.g. for fat models)
             
-            if ( ~isempty( cm.m ) )
+            if ( cm.b_prep )
                 
-                error( 'Tissue parameters can only be set prior to calling CoMoTk.init_configuration.' );
+                error( 'Tissue parameters can only be set prior to calling CoMoTk.prep.' );
                 
             end
             
@@ -343,9 +345,9 @@ classdef CoMoTk < matlab.mixin.Copyable
             %
             % length must match the number of subtissues (e.g. for fat models)
             
-            if ( ~isempty( cm.m ) )
+            if ( cm.b_prep )
                 
-                error( 'Tissue parameters can only be set prior to calling CoMoTk.init_configuration.' );
+                error( 'Tissue parameters can only be set prior to calling CoMoTk.prep.' );
                 
             end
             
@@ -387,9 +389,9 @@ classdef CoMoTk < matlab.mixin.Copyable
             %
             % absence of diffusion: just set all elements D( : ) to zero 
             
-            if ( ~isempty( cm.m ) )
+            if ( cm.b_prep )
                 
-                error( 'Tissue parameters can only be set prior to calling CoMoTk.init_configuration.' );
+                error( 'Tissue parameters can only be set prior to calling CoMoTk.prep.' );
                 
             end
             
@@ -461,16 +463,14 @@ classdef CoMoTk < matlab.mixin.Copyable
         
         %% set / get methods (optional variables)
         
-        % relative B1 (default == 1)
-        
         function set.B1 ( cm, B1 )
             % set relative B1+
             %
             % set to 1, if not explicitly specified            
             
-            if ( ~isempty( cm.m ) )
+            if ( cm.b_prep )
                 
-                error( 'B1 can only be set prior to calling CoMoTk.init_configuration.' );
+                error( 'B1 can only be set prior to calling CoMoTk.prep.' );
                 
             end
             
@@ -497,12 +497,13 @@ classdef CoMoTk < matlab.mixin.Copyable
         function set.mu ( cm, mu )
             % set the (relative) proton density
             %
+            % default = 1 (only, if cm.n_tissues == 1)
+            % mandatory parameter, if cm.n_tissues > 1
             % length must match the number of subtissues (e.g. for fat models)
-            % set to 1, if not explicitly specified
             
-            if ( ~isempty( cm.m ) )
+            if ( cm.b_prep )
                 
-                error( 'Tissue parameters can only be set prior to calling CoMoTk.init_configuration.' );
+                error( 'Tissue parameters can only be set prior to calling CoMoTk.prep.' );
                 
             end
             
@@ -561,6 +562,10 @@ classdef CoMoTk < matlab.mixin.Copyable
             % the following size is required:
             % size( k ) == [ n_tissues, n_tissues ]
             % set to [], if not set (non-exchanging tissues)
+            % 
+            % Note: 
+            % Diagonal elements are calculated according to sum rule
+            % (particle conservation). Supplied diagonal values are ignored. 
             
             if ( cm.n_tissues == 0 )
                 
@@ -575,27 +580,14 @@ classdef CoMoTk < matlab.mixin.Copyable
                 error( 'size( k ) ~= [ n_tissues, n_tissues ].' );
                 
             end
-            
-            cm.k_priv = k;
-            
+                        
             % establish sum rule (particle conservation)
 
-            for j = 1 : cm.n_tissues
-                
-                cm.k_priv( j, j ) = 0;
-                
-                for i = 1 : cm.n_tissues
-                    
-                    if ( i ~= j )
-                        
-                        cm.k_priv( j, j ) = cm.k_priv( j, j ) - cm.k_priv( i, j );
-                        
-                    end
-                    
-                end
-                
-            end
-                
+            k = k - diag( diag( k ) );  % first, set the diagonal to zero
+
+            cm.k_priv = k - diag( sum( k ) );   % now we assign the negative row sum to the diagonal
+                                                % and store the result
+                            
         end
         
         function res = get.k( cm )
@@ -610,9 +602,9 @@ classdef CoMoTk < matlab.mixin.Copyable
         function set.options ( cm, options )
             % set some options
             
-            if ( ~isempty( cm.m ) )
+            if ( cm.b_prep )
                 
-                error( 'Options can only be set prior to calling CoMoTk.init_configuration.' );
+                error( 'Too late to change options.' );
                 
             end
             
@@ -630,133 +622,6 @@ classdef CoMoTk < matlab.mixin.Copyable
             
         end
         
-        %% prepare magnetization
-        
-        function init_configuration ( cm, m )
-            % Initializes configuration
-            %
-            % IN
-            %
-            % m : Initial real magnetization vector ( row or column ) with
-            %     m( 1 ) == m_x
-            %     m( 2 ) == m_y
-            %     m( 3 ) == m_z
-            %
-            % Assumption: only zero order configuration occupied
-            %
-            % Method must be called *after* all mandatory parameters (R1, R2, D)
-            % have been set. 
-            
-            cm.check_mandatory_parameters;
-            
-            % no diffusion AND magnetization exchange
-            
-            if ( cm.diffusion ~= CoMoTk.No_Diff && ~isempty( cm.k ) )
-                
-                error( 'Diffusion AND magnetization exchange not supported.')
-                
-            end
-            
-            if ( isempty( m ) )  % initialize with proton densities
-                
-                m = zeros( 3, cm.n_tissues );
-                m( 3, : ) = cm.mu;
-                
-            elseif ( size( m, 1 ) ~= 3 || size( m, 2 ) ~= cm.n_tissues )
-                
-                error( 'Magnetization has wrong dimension.' );
-                
-            end
-            
-            % take initial settings from options
-            
-            cm.alloc_d = cm.options.alloc_d;
-            cm.alloc_n = cm.options.alloc_n;
-            cm.epsilon = cm.options.epsilon;
-            cm.rapid_meltdown = cm.options.rapid_meltdown;
-            cm.verbose = cm.options.verbose;
-            cm.debug = cm.options.debug;
-            
-            % generate initial configuration vector
-            
-            cm.m = zeros( 3, cm.n_tissues, cm.alloc_n );
-            
-            cm.m( 1, :, cm.null_idx ) = ( m( 1, : ) + 1i * m( 2, : ) ) * CoMoTk.sqrt_0p5;
-            cm.m( 2, :, cm.null_idx ) = m( 3, : );
-            cm.m( 3, :, cm.null_idx ) = conj( cm.m( 1, :, cm.null_idx ) );
-            
-            % allocate space
-            
-            cm.b_lambda = false( 1, cm.alloc_d );
-            cm.b_n = false( cm.alloc_n, 1 );
-            
-            cm.lambda = zeros( 1, cm.alloc_d );
-            cm.n = zeros( cm.alloc_n, cm.alloc_d );
-            
-            cm.b_up_free = true( cm.alloc_n, cm.alloc_d );
-            cm.b_do_free = true( cm.alloc_n, cm.alloc_d );
-            
-            cm.idx_up = zeros( cm.alloc_n, cm.alloc_d );
-            cm.idx_do = zeros( cm.alloc_n, cm.alloc_d );
-            
-            cm.idx_up_new = zeros( cm.alloc_n, 1 );
-            cm.idx_do_new = zeros( cm.alloc_n, 1 );
-            
-            % pure relaxation
-            
-            cm.b_E = false( cm.alloc_d, 1 );
-            cm.E = zeros( 2, cm.n_tissues, cm.alloc_d );
-
-            % diffusion
-            
-            if ( cm.diffusion ~= CoMoTk.No_Diff )
-                
-                cm.b_En = false( cm.alloc_n, cm.alloc_d );
-                cm.En = zeros( 3, cm.n_tissues, cm.alloc_n, cm.alloc_d );
-                cm.En_exp = zeros( 3, cm.n_tissues, cm.alloc_n, cm.alloc_d );
-                
-                if ( cm.diffusion == CoMoTk.Iso_Diff )
-                    
-                    cm.dim.D = 1;                    
-                    cm.dim.S = 1;                    
-                    
-                elseif ( cm.diffusion == CoMoTk.Tensor_Diff )
-                    
-                    cm.dim.D = 6;                    
-                    cm.dim.S = 6;                    
-                    
-                else
-                    
-                    error( 'This should not happen.' );
-                    
-                end
-
-                cm.s = zeros( 3, cm.alloc_d );
-                cm.S = zeros( cm.dim.S, cm.alloc_d );
-
-            end
-            
-            % only the zeroth configuration is occupied
-            
-            cm.b_n( cm.null_idx ) = true;
-            cm.n_conf = 1;
-            
-            % initialize times and gradients
-            
-            cm.b_tau = false( cm.alloc_d, 1 );
-            cm.tau = zeros( cm.alloc_d, 1 );
-            
-            cm.b_p = false( cm.alloc_d, 1 );
-            cm.p = zeros( 3, cm.alloc_d );
-            
-            cm.b_tau_n = false( cm.alloc_n, 1 );
-            cm.tau_n = zeros( cm.alloc_n, 1 );
-
-            cm.b_p_n = false( cm.alloc_n, 1 );
-            cm.p_n = zeros( 3, cm.alloc_n );
-                        
-        end
-        
         %% define, which derivatives should be calculated
         
         function set_derivatives ( cm, param )
@@ -771,9 +636,11 @@ classdef CoMoTk < matlab.mixin.Copyable
             % the length of param.X specifies further selection
             % like specific tissue(s), RF pulse(s) (details see below)
             
-            if ( isempty( cm.m ) )
+            % prepare everything, if not done yet
+            
+            if ( ~cm.b_prep )
                 
-                error( 'Derivatives must be set after calling CoMoTk.init_configuration.' );
+                cm.prep;
                 
             end
             
@@ -905,11 +772,11 @@ classdef CoMoTk < matlab.mixin.Copyable
             % (instead of instantaneous rotation) 
             % For proper use see example script and associated passage in the manuscript.
             
-            % check, whether all variables have been set.
+            % prepare everything, if not done yet
             
-            if ( isempty( cm.m ) )
+            if ( ~cm.b_prep )
                 
-                error( 'Incomplete specification of configuration model.' );
+                cm.prep;
                 
             end
             
@@ -1202,8 +1069,6 @@ classdef CoMoTk < matlab.mixin.Copyable
             %
             % b_is_ok : (bool) status, used for debugging
             
-            % update dimensions and indices
-            
             % check for minimal information
             
             if ( ~isfield( param, 'lambda' ) )
@@ -1212,6 +1077,14 @@ classdef CoMoTk < matlab.mixin.Copyable
                 
             end
 
+            % prepare everything, if not done yet
+            
+            if ( ~cm.b_prep )
+                
+                cm.prep;
+                
+            end
+                        
             b_is_ok = true;
             
             if ( cm.options.debug && ~cm.check_state( 'before pre_time' ) )
@@ -1882,6 +1755,14 @@ classdef CoMoTk < matlab.mixin.Copyable
         end
         
         function spoiler ( cm )
+            % prepare everything, if not done yet
+            
+            if ( ~cm.b_prep )
+                
+                cm.prep;
+                
+            end
+            
             % set all transverse magnetization to zero (instantaneously)
            
             cm.m( [ 1, 3 ], :, cm.b_n ) = 0;
@@ -2274,9 +2155,9 @@ classdef CoMoTk < matlab.mixin.Copyable
     
     methods ( Access = private )
         % several helper routines
-        
-        function check_mandatory_parameters ( cm )
-            % Check, whether the mandatory tissue parameters have been set.
+
+        function check ( cm )
+            % Check, whether all mandatory tissue parameters have been set.
             
             if ( isempty( cm.R1 ) || ...
                     isempty( cm.R2 ) || ...
@@ -2286,8 +2167,144 @@ classdef CoMoTk < matlab.mixin.Copyable
                 
             end
             
+            % check proton densities
+            
+            if ( size( cm.mu, 2 ) ~= cm.n_tissues )
+                
+                error( 'Proton density not set properly.' );
+                
+            end
+            
+            % check correct long time limit of magnetization transfer/exchange
+            % (particle conservation is properly incorporated by set.k) 
+            
+            if ( ~isempty( cm.k ) )
+               
+                % cm.mu must lie in the null space of cm.k:
+                
+                k_mu = cm.k * cm.mu( : );
+                
+                if ( max( abs( k_mu ) > 10 * eps ) )
+                    
+                    % Maybe there is an error, maybe it is just numerical
+                    % inaccuracy. Provide an informal message to the user and let
+                    % the program continue.
+                    
+                    fprintf( 1, 'Check, whether cm.mu lies in null space of cm.k\n' );
+                    fprintf( 1, 'Found result for cm.k * cm.mu =\n' );
+                    disp( k_mu );
+                    
+                end
+                
+            end
+            
         end
+        
+        function prep ( cm )
+            % Initializes magnetization and other stuff
+            
+            % check, whether required parameters have been set properly
+            
+            cm.check;
+            
+            % no diffusion AND magnetization exchange
+            
+            if ( cm.diffusion ~= CoMoTk.No_Diff && ~isempty( cm.k ) )
+                
+                error( 'Diffusion AND magnetization exchange not supported.')
+                
+            end
+            
+            % take initial settings from options
+            
+            cm.alloc_d = cm.options.alloc_d;
+            cm.alloc_n = cm.options.alloc_n;
+            cm.epsilon = cm.options.epsilon;
+            cm.rapid_meltdown = cm.options.rapid_meltdown;
+            cm.verbose = cm.options.verbose;
+            cm.debug = cm.options.debug;
+            
+            % generate initial configuration vector (thermal equlibrium)
+            
+            cm.m = zeros( 3, cm.n_tissues, cm.alloc_n );
+            cm.m( 2, :, cm.null_idx ) = cm.mu;
+            
+            % allocate space
+            
+            cm.b_lambda = false( 1, cm.alloc_d );
+            cm.b_n = false( cm.alloc_n, 1 );
+            
+            cm.lambda = zeros( 1, cm.alloc_d );
+            cm.n = zeros( cm.alloc_n, cm.alloc_d );
+            
+            cm.b_up_free = true( cm.alloc_n, cm.alloc_d );
+            cm.b_do_free = true( cm.alloc_n, cm.alloc_d );
+            
+            cm.idx_up = zeros( cm.alloc_n, cm.alloc_d );
+            cm.idx_do = zeros( cm.alloc_n, cm.alloc_d );
+            
+            cm.idx_up_new = zeros( cm.alloc_n, 1 );
+            cm.idx_do_new = zeros( cm.alloc_n, 1 );
+            
+            % pure relaxation
+            
+            cm.b_E = false( cm.alloc_d, 1 );
+            cm.E = zeros( 2, cm.n_tissues, cm.alloc_d );
 
+            % diffusion
+            
+            if ( cm.diffusion ~= CoMoTk.No_Diff )
+                
+                cm.b_En = false( cm.alloc_n, cm.alloc_d );
+                cm.En = zeros( 3, cm.n_tissues, cm.alloc_n, cm.alloc_d );
+                cm.En_exp = zeros( 3, cm.n_tissues, cm.alloc_n, cm.alloc_d );
+                
+                if ( cm.diffusion == CoMoTk.Iso_Diff )
+                    
+                    cm.dim.D = 1;                    
+                    cm.dim.S = 1;                    
+                    
+                elseif ( cm.diffusion == CoMoTk.Tensor_Diff )
+                    
+                    cm.dim.D = 6;                    
+                    cm.dim.S = 6;                    
+                    
+                else
+                    
+                    error( 'This should not happen.' );
+                    
+                end
+
+                cm.s = zeros( 3, cm.alloc_d );
+                cm.S = zeros( cm.dim.S, cm.alloc_d );
+
+            end
+            
+            % only the zeroth configuration is occupied
+            
+            cm.b_n( cm.null_idx ) = true;
+            cm.n_conf = 1;
+            
+            % initialize times and gradients
+            
+            cm.b_tau = false( cm.alloc_d, 1 );
+            cm.tau = zeros( cm.alloc_d, 1 );
+            
+            cm.b_p = false( cm.alloc_d, 1 );
+            cm.p = zeros( 3, cm.alloc_d );
+            
+            cm.b_tau_n = false( cm.alloc_n, 1 );
+            cm.tau_n = zeros( cm.alloc_n, 1 );
+
+            cm.b_p_n = false( cm.alloc_n, 1 );
+            cm.p_n = zeros( 3, cm.alloc_n );
+                        
+            % everything is prepared now
+            
+            cm.b_prep = true;
+            
+        end        
+        
         function update_tau_n ( cm )
             % update cm.tau_n and cm.b_tau_n
             

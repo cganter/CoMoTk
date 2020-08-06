@@ -108,12 +108,6 @@ while ( true )
     cm_HS1_rapid.options = options;
     cm_Chirp_rapid.options = options;
     
-    % start with longitudinal magnetization
-    
-    cm_HS1.init_configuration ( [ 0; 0; 1 ] );
-    cm_HS1_rapid.init_configuration ( [ 0; 0; 1 ] );
-    cm_Chirp_rapid.init_configuration ( [ 0; 0; 1 ] );
-    
     % assign unique handles for the time interval
     
     lambda_rf = 1;

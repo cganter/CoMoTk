@@ -157,10 +157,6 @@ while ( true )
         
         cm.options = options;
         
-        % start with longitudinal magnetization
-        
-        cm.init_configuration ( [ 0; 0; 1 ] );
-        
         %% comlete parameters for time intervals (gradient moment and shape)
         T_1.p = [ p_( i ); 0; 0 ];   
         T_1.s = [ s_( 1, i ); 0; 0 ];

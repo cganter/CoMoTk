@@ -94,11 +94,6 @@ while ( true )
     cm_cpmg.options = options;
     cm_no_cpmg.options = options;
     
-    % start with longitudinal magnetization
-    
-    cm_cpmg.init_configuration ( [ 0; 0; 1 ] );
-    cm_no_cpmg.init_configuration ( [ 0; 0; 1 ] );
-    
     %% prepare time between end of RF pulse and echo
     
     % unique index

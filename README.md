@@ -1,14 +1,14 @@
 
 # Table of Contents
 
-1.  [Background](#org505c544)
-2.  [Installation](#orga8ffa1f)
-3.  [Small Example](#orgcb19f41)
-4.  [Current State](#orgae239dc)
-5.  [Feedback](#orga6c1ebe)
+1.  [Background](#orge824432)
+2.  [Installation](#org3d1e455)
+3.  [Small Example](#orgbf7120f)
+4.  [Current State](#org5c33f3a)
+5.  [Feedback](#org37c9a68)
 
 
-<a id="org505c544"></a>
+<a id="orge824432"></a>
 
 # Background
 
@@ -42,7 +42,7 @@ It is based upon a multidimensional version of the configuration model (CM), whi
 provided as soon as available).
 
 
-<a id="orga8ffa1f"></a>
+<a id="org3d1e455"></a>
 
 # Installation
 
@@ -51,11 +51,14 @@ Just add the `matlab/` folder with subdirectories to your Matlab path.
 **Important**: A Matlab version of **R2016b** or later is required, since implicit expansion is used a lot.
 
 
-<a id="orgcb19f41"></a>
+<a id="orgbf7120f"></a>
 
 # Small Example
 
-The following example should give a first impression of how to work with the matlab toolkit, while the [User Guide](doc/CoMoTk_matlab.pdf) gives a complete overview of the available options. It is also recommended to look at the scripts in the `examples` folder, which cover typical application scenarios and may serve as templates for own projects. To make full use of the toolkit, it is important to understand the theory behind the configuration model, which will be presented in an article (link will be given, as soon as available).
+The following example should give a first impression of how to work with the matlab toolkit with some more details provided in
+the [User Guide](doc/CoMoTk_matlab.pdf). It is also highly recommended to look at the scripts in the `examples` folder, which cover typical application 
+scenarios and may serve as templates for own projects. To make full use of the toolkit, it is important to understand the theory 
+behind the configuration model, which will be presented in an article (link will be given, as soon as available).
 
     % Example: sample FID of SSFP during transient phase 
     
@@ -94,7 +97,7 @@ The following example should give a first impression of how to work with the mat
       % time to echo
       cm.time( te );               
     
-      % only magnetization pathways with no (0) dephasing by crusher contribute to the FID signal:
+      % only magnetization pathways with no (0) dephasing by crushers contribute to the FID signal:
       fid.b_n = cm.find( crusher, 0 );
     
       % extract result
@@ -110,12 +113,11 @@ The following example should give a first impression of how to work with the mat
     % done
 
 
-<a id="orgae239dc"></a>
+<a id="org5c33f3a"></a>
 
 # Current State
 
-`CoMoTk` is currently work in progress and should be functional to the extent as shown in the `examples/`
-folder. The following table gives a brief overview on the actual state.
+The following table gives a brief overview on the actual state:
 
 <table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
 
@@ -172,12 +174,12 @@ folder. The following table gives a brief overview on the actual state.
 </tbody>
 </table>
 
-**Please note:** The current proof-of-concept implementation only supports single core computation and the simulation of more involved
+**Please note:** The current proof-of-concept implementation only supports single CPU core computation and the simulation of more involved
 sequences may become rather slow. This is not a fundamental limitation, since the time-consuming part of the CM iteration 
 fully benefits from parallel computation. This limitation will be (hopefully) addressed in some future implementation.
 
 
-<a id="orga6c1ebe"></a>
+<a id="org37c9a68"></a>
 
 # Feedback
 
