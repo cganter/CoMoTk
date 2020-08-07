@@ -1,16 +1,9 @@
 
-# Table of Contents
 
-1.  [Background](#orge824432)
-2.  [Installation](#org3d1e455)
-3.  [Small Example](#orgbf7120f)
-4.  [Current State](#org5c33f3a)
-5.  [Feedback](#org37c9a68)
+# Configuration Model Toolkit
 
 
-<a id="orge824432"></a>
-
-# Background
+## Background
 
 The simulation of sequences or sequence blocks is a recurrent task in magnetic resonance imaging (MRI).
 How the calculation is actually performed, is highly variable and requires a decision about the desired degree of realism.
@@ -42,18 +35,14 @@ It is based upon a multidimensional version of the configuration model (CM), whi
 provided as soon as available).
 
 
-<a id="org3d1e455"></a>
-
-# Installation
+## Installation
 
 Just add the `matlab/` folder with subdirectories to your Matlab path.
 
 **Important**: A Matlab version of **R2016b** or later is required, since implicit expansion is used a lot.
 
 
-<a id="orgbf7120f"></a>
-
-# Small Example
+## Small Example
 
 The following example should give a first impression of how to work with the matlab toolkit with some more details provided in
 the [User Guide](doc/CoMoTk_matlab.pdf). It is also highly recommended to look at the scripts in the `examples` folder, which cover typical application 
@@ -113,9 +102,7 @@ behind the configuration model, which will be presented in an article (link will
     % done
 
 
-<a id="org5c33f3a"></a>
-
-# Current State
+## Current State
 
 The following table gives a brief overview on the actual state:
 
@@ -179,9 +166,7 @@ sequences may become rather slow. This is not a fundamental limitation, since th
 fully benefits from parallel computation. This limitation will be (hopefully) addressed in some future implementation.
 
 
-<a id="org37c9a68"></a>
-
-# Feedback
+## Feedback
 
 Please use the [issue tracker](https://github.com/cganter/CoMoTk/issues) or write an email to [comotk.rad.med@tum.de](mailto:comotk.rad.med@tum.de).
 
