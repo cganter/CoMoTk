@@ -45,7 +45,7 @@ Just add the `matlab/` folder with subdirectories to your Matlab path.
 ## Releases
 
  To supplement the submission of the background article about the CM, a packaged, citable version of CoMoTk has been created:
-[https://zenodo.org/badge/DOI/10.5281/zenodo.4022354.svg?style=svg](https://doi.org/10.5281/zenodo.4022354) (v0.42 - Sept. 2020)
+[![img](https://zenodo.org/badge/DOI/10.5281/zenodo.4022354.svg)](https://doi.org/10.5281/zenodo.4022354) (v0.42 - Sept. 2020)
 
 
 ## Small Example
