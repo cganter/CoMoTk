@@ -42,6 +42,12 @@ Just add the `matlab/` folder with subdirectories to your Matlab path.
 **Important**: A Matlab version of **R2016b** or later is required, since implicit expansion is used a lot.
 
 
+## Releases
+
+ To supplement the submission of the background article about the CM, a packaged, citable version of CoMoTk has been created:
+[https://zenodo.org/badge/DOI/10.5281/zenodo.4022354.svg?style=svg](https://doi.org/10.5281/zenodo.4022354) (v0.42 - Sept. 2020)
+
+
 ## Small Example
 
 The following example should give a first impression of how to work with the matlab toolkit with some more details provided in
