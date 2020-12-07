@@ -1846,10 +1846,12 @@ classdef CoMoTk < matlab.mixin.Copyable
             %
             % param.omega : bulk off-resonance [ rad / ms ] (optional)
             % (default == 0, if field is missing)
+            % may be an array
             %
             % param.x : position vector [ um ] (optional)
             % (== zero vector, if field is missing)
-            %
+            % may have a second dimension
+            % 
             % param.w_n : external weighting factors (optional, if supplied, 
             % size needs to match the number of addends in the CM sum)
             %
@@ -1880,16 +1882,6 @@ classdef CoMoTk < matlab.mixin.Copyable
                 
             end
             
-            if ( ~isempty( param ) && isfield( param, 'omega' ) )
-                
-                omega_ = param.omega;
-                
-            else
-                
-                omega_ = 0;
-                
-            end
-            
             n_c = sum( b_n_ );
             
             if ( n_c == 0 )
@@ -1899,19 +1891,43 @@ classdef CoMoTk < matlab.mixin.Copyable
                 
             end
             
-            % off-resonance and chemical shift (if applicable )
+            % initialize weigthing factor
+
+            if ( ~isempty( param ) && isfield( param, 'w_n' ) )
+                
+                w_n_ = reshape( param.w_n, [ 1, length( param.w_n ) ] );
+                
+            else   % no explicit weights provided
+                
+                w_n_ = 1;
+                
+            end
+
+            % off-resonance(s)
             
-            w_n_ = exp( - 1i .* omega_ .* reshape( cm.tau_n( b_n_ ), [ 1, n_c ] ) );
+            if ( ~isempty( param ) && isfield( param, 'omega' ) )
+                
+                n_om = length( param.omega ); 
+                omega_ = reshape( param.omega, [ 1, 1, n_om ] );
+                
+                % update weights
+                
+                w_n_ = w_n_ .* exp( - 1i .* omega_ .* reshape( cm.tau_n( b_n_ ), [ 1, n_c ] ) );
             
-            % *= gradient effects (optional)
+            end
+
+            % location(s)
             
             if ( ~isempty( param ) && isfield( param, 'x' ) )
                 
-                w_n_ = w_n_ .* exp ( - 1i .* sum( cm.p_n( :, b_n_ ) .* param.x( : ), 1 ) );
-                                                                                          
+                n_x = size( param.x, 2 );
+                x_ = reshape( param.x, [ 3, 1, 1, n_x ] );
+                
+                w_n_ = w_n_ .* exp ( - 1i .* sum( cm.p_n( :, b_n_ ) .* x_, 1 ) );
+                
             end
-
-            % *= effects due to inhomogeneous broadening (if applicable, most commonly due to R2p)
+            
+            % effects due to inhomogeneous broadening (if applicable, most commonly due to R2p)
             
             if ( ~isempty( cm.inhomogeneous_decay ) )
                 
@@ -1919,23 +1935,14 @@ classdef CoMoTk < matlab.mixin.Copyable
                 
             end
             
-            % *= explicit weights (optional)
-            
-            if ( ~isempty( param ) && isfield( param, 'w_n' ) )
-                
-                w_n_( : ) = w_n_( : ) .* param.w_n( : );
-                                                                                          
-            end
-
-            % add a singleton dimension for coordinates
-            
-            sz_w_n = size( w_n_ );
-            w_n_ = reshape( w_n_, [ 1, sz_w_n ] );
-            
             % calculate the isochromat
             
-            res.xy = CoMoTk.sqrt_2 .* sum( sum( w_n_ .* cm.m( 1, :, b_n_ ), 2 ), 3 );
-            res.z = sum( sum( w_n_ .* cm.m( 2, :, b_n_ ), 2 ), 3 );  % should be real...
+            tmp_ = reshape( ...
+                sum( cm.m( 1 : 2 , :, b_n_ ) .* reshape( w_n_, [ 1, size( w_n_ ) ] ), 2 : 3 ), ...
+                [ 2, size( w_n_, 3 : 4 ) ] );
+            
+            res.xy = CoMoTk.sqrt_2 .* tmp_( 1, :, : );
+            res.z = tmp_( 2, :, : );
             
             % and the calculated derivatives
             
