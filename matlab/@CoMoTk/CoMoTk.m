@@ -2,17 +2,14 @@ classdef CoMoTk < matlab.mixin.Copyable
     % CoMoTk  Configuration Model Toolkit
     %
     % Implementation of the configuration model (CM), which has
-    % been extensively described in a separate open-access manuscript.
+    % been extensively described in a separate manuscript.
     % (link available on: https://github.com/cganter/CoMoTk)
     % 
     % Also check out the specific documentation and example scripts.
     %
-    % To facilitate the use in optimization problems, it also supports the
-    % (optional) calculation of several first order derivatives.
+    % Requires Matlab R2018b (or later).
     %
-    % Requires Matlab R2016b (or later).
-    %
-    % Carl Ganter 2018
+    % Carl Ganter 2020
     
     properties ( Constant )
         
@@ -57,10 +54,6 @@ classdef CoMoTk < matlab.mixin.Copyable
     
     properties ( Dependent )
         
-        % global options
-        
-        options;
-        
         % ALL dependent quantities (except for the optional s)
         % have to be set explicitly prior to simulation. Otherwise an error is returned.
         
@@ -75,9 +68,9 @@ classdef CoMoTk < matlab.mixin.Copyable
         D;                                                                 % [ um^2 / ms ]  i.e. D( Water ) is approximately equal to 3
         
         %% multiple tissues
-        % relative weight
+        % (relative) proton density
         
-        mu;
+        pd;
         
         % delta omega (due to chemical shift, e.g. to specify water/fat models)
         
@@ -94,6 +87,14 @@ classdef CoMoTk < matlab.mixin.Copyable
         % relative B1
         
         B1;
+        
+        %% allocated (p,tau) space
+        
+        n_p;
+        d_p;
+        
+        n_tau;
+        d_tau;
                 
     end
     
@@ -101,46 +102,33 @@ classdef CoMoTk < matlab.mixin.Copyable
         
         b_prep = false;                                                    % is everything prepared?
         
-        %% global options
-        % the purpose of the alloc_* variables is to increase the numerical performance by minimizing
-        % -> recalculation of identical quantities (alloc_RF)
-        % -> reallocation of memory (alloc_d, alloc_n)
-        % the set values define
-        % -> the initial state
-        % -> and the minimal reallocation increment, if a limit is reached
-        
-        options_priv = struct( ...
-            'alloc_d', 1, ...                                              % dimension of configuration model
-            'alloc_n', 10000, ...                                          % number of occupied states
-            'epsilon', 0, ...                                              % discard configuration vectors with a squared norm smaller than this
-            'rapid_meltdown', true, ...                                    % should be faster, but requires more memory
-            'verbose', false, ...                                          % various status messages
-            'debug', false ...                                             % store state for debugging purposes
-            );
-        
-        % actual values
-        
-        alloc_d = [];
-        alloc_n = [];
-        epsilon = [];
-        rapid_meltdown = [];
-        verbose = [];
-        debug = [];
-        
         %% information about the actual state
         
         m = [];                                                            % configuration vector
-        
-        b_lambda = [];                                                     % occupied dimensions
-        b_n = [];                                                          % occupied configurations (total)
-        
-        lambda = [];                                                       % indices of dimensions
-        n = [];                                                            % configuration orders in each dimension
-        
+                                                                           % m = 6d-complex array
+                                                                           % dimensions:
+                                                                           % 1: magnetization vector components (== 3)
+                                                                           % 2: number of tissues (== cm.n_tissues)
+                                                                           % 3-5: accumulated moments p(j) (== 2 * cm.n_p(j) + 1)
+                                                                           % 6: accumulated transverse time tau (== 2 * cm.n_tau + 1)
+                                                                           
         n_tissues = 0;		                                               % number of tissues
-        d = 0;                                                             % == sum( cm.b_lambda ) : dimension of configuration model
-        n_conf = 0;                                                        % == sum( cm.b_n ) : occupied configurations (including n == 0)
-        null_idx = 1;                                                      % index, corresponding to n == 0 (remains untouched)
+        
+        d_p_priv = zeros( 1, 3 );                                          % 3-d real, associated small increments (absolute values) 
+        n_p_priv = zeros( 1, 3 );                                          % 3-d integer, number of positive gradient moments in each direction
+        
+        p = { [], [], [] };                                                % associated gradient moments
+        
+        d_tau_priv = 0;                                                    % real, associated small increment (absolute value)
+        n_tau_priv = 0;                                                    % integer, number of positive accumulated times
+        
+        tau = [];                                                          % associated duration vectors
+        
+        b_occ = [];                                                        % actually occupied configurations
+                                                                           % size( cm.b_occ ) == size( cm.m )
+    
+        p0 = ones( 1, 3 );                                                 % 3-d index array, corresponding to p == 0
+        tau0 = 1;                                                          % index, corresponding to tau == 0
         
         %% mandatory tissue properties
         % general properties
@@ -156,136 +144,14 @@ classdef CoMoTk < matlab.mixin.Copyable
         %% optional tissue properties and measurement conditions
         % cf. dependent counterparts
         
-        mu_priv = 1;
+        pd_priv = 1;
         dom_priv = 0;
         k_priv = [];
         B1_priv = 1;
-        
-        %% sequence properties
-        % time per interval
-        
-        b_tau = [];
-        tau = [];                                                          % [ ms ]
-        
-        % gradient moment (for each time period)
-        % unit: [ 1 / um ] (spatial frequency)
-        % definition: gamma * integral( dt * g( t ) )
-        % with gamma == 2 * pi * 42.576 / ( mT * ms )
-        % and g( t ) the gradient in [ mT / um ]
-        
-        b_p = [];
-        p = [];                                                            % [ rad / um ]
-        
-        % integrals for arbitrary (but otherwise constant) gradient shapes
-        % see documentation for the precise definition
-        
-        s = [];                                                            % [ rad / um ]
-        S = [];                                                            % [ rad^2 / um^2 ]
-   
+                
         % auxiliary variable for tensor diffusion
         
         D_vec = [];
-        
-        %% time and gradient moment, associated with configuration order
-        % updated after every time interval
-        
-        b_tau_n = [];
-        tau_n = [];
-        
-        b_p_n = [];
-        p_n = [];
-        
-        %% derivatives
-        % handles of derivatives to calculate
-        
-        dR1 = [];
-        dR2 = [];
-        dD = [];
-        dB1 = [];
-        dFlipAngle = [];
-        dPhase = [];
-        dtau = [];
-        dp = [];
-        ds = [];
-        dS = [];
-        
-        % associated numbers ...
-                
-        len = struct( ...
-            'dR1', 0, ...
-            'dR2', 0, ...
-            'dD', 0, ...
-            'dB1', 0, ...
-            'dFlipAngle', 0, ...
-            'dPhase', 0, ...
-            'dtau', 0, ...
-            'dp', 0, ...
-            'ds', 0, ...
-            'dS', 0 ...
-            );
-        
-        % ... degrees of freedom ...
-        
-        dim = struct( ...
-            'R1', 1, ...
-            'R2', 1, ...
-            'D', 1, ...
-            'B1', 1, ...
-            'FlipAngle', 1, ...
-            'Phase', 1, ...
-            'tau', 1, ...
-            'p', 3, ...
-            's', 3, ...
-            'S', 1 ...
-        );
-        
-        % ... and derivatives of configuration vector
-        
-        dm = struct( ...
-            'dR1', [], ...
-            'dR2', [], ...
-            'dD', [], ...
-            'dB1', [], ...
-            'dFlipAngle', [], ...
-            'dPhase', [], ...
-            'dtau', [], ...
-            'dp', [], ...
-            'ds', [], ...
-            'dS', [] ...
-            );
-        
-        %% auxiliary variables to speed up calculations
-        % bookkeeping of occupied states
-        
-        b_up_free = [];
-        b_do_free = [];
-        
-        idx_up = [];
-        idx_do = [];
-        
-        idx_up_new = [];
-        idx_do_new = [];
-        
-        % pure relaxation
-        
-        b_E = [];
-        E = [];
-        
-        % relaxation with diffusion and derivatives
-        
-        b_En = [];
-        En = [];
-        En_exp = [];
-        
-        dEn_exp_dD = [];
-        dEn_exp_dtau = [];
-        dEn_exp_dp = [];
-        dEn_exp_ds = [];
-        dEn_exp_dS = [];
-        
-        % debugging
-        
-        log = [];
         
     end
     
@@ -320,7 +186,7 @@ classdef CoMoTk < matlab.mixin.Copyable
             if ( cm.n_tissues == 0 )
                 
                 cm.n_tissues = length( R1 );
-                cm.mu = ones( 1, cm.n_tissues );
+                cm.pd = ones( 1, cm.n_tissues );
                 cm.dom = zeros( cm.n_tissues, 1 );
                 
             elseif ( length( R1 ) ~= cm.n_tissues )
@@ -360,7 +226,7 @@ classdef CoMoTk < matlab.mixin.Copyable
             if ( cm.n_tissues == 0 )
                 
                 cm.n_tissues = length( R2 );
-                cm.mu = ones( 1, cm.n_tissues );
+                cm.pd = ones( 1, cm.n_tissues );
                 cm.dom = zeros( cm.n_tissues, 1 );
                 
             elseif ( length( R2 ) ~= cm.n_tissues )
@@ -422,7 +288,7 @@ classdef CoMoTk < matlab.mixin.Copyable
             if ( cm.n_tissues == 0 )
                 
                 cm.n_tissues = n_tis;
-                cm.mu = ones( 1, cm.n_tissues );
+                cm.pd = ones( 1, cm.n_tissues );
                 cm.dom = zeros( cm.n_tissues, 1 );
                 
             elseif ( n_tis ~= cm.n_tissues )
@@ -461,7 +327,182 @@ classdef CoMoTk < matlab.mixin.Copyable
             
         end
         
+        function set.d_p ( cm, d_p )
+            % set positive gradient moment increment in each direction
+            %
+            % IN
+            %
+            % non-negative vector of length 3 
+            
+            if ( cm.b_prep )
+                
+                error( 'Tissue parameters can only be set prior to calling CoMoTk.prep.' );
+                
+            end
+            
+            if ( length( d_p ) ~= 3 || min( d_p ) < 0 )
+                
+                error( 'Invalid setting of d_p.' );
+                
+            end
+                        
+            cm.d_p_priv = d_p( : );
+            
+        end
+        
+        function res = get.d_p ( cm )
+            
+            res = cm.d_p_priv;
+            
+        end        
+        
+        function set.n_p ( cm, n_p )
+            % set number of positive gradient moments in each direction
+            %
+            % IN
+            %
+            % non-negative vector of length 3 
+            
+            if ( cm.b_prep )
+                
+                error( 'Tissue parameters can only be set prior to calling CoMoTk.prep.' );
+                
+            end
+            
+            if ( length( n_p ) ~= 3 || min( n_p ) < 0 )
+                
+                error( 'Invalid setting of n_p.' );
+                
+            end
+                        
+            cm.n_p_priv = round( n_p( : )' );
+            
+            cm.p0 = cm.n_p_priv + 1;
+            
+        end
+        
+        function res = get.n_p ( cm )
+            
+            res = cm.n_p_priv;
+            
+        end        
+        
+        function set.d_tau ( cm, d_tau )
+            % set positive gradient moment increment in each direction
+            %
+            % IN
+            %
+            % positive number 
+            
+            if ( cm.b_prep )
+                
+                error( 'Tissue parameters can only be set prior to calling CoMoTk.prep.' );
+                
+            end
+            
+            if ( d_tau <= 0 )
+                
+                error( 'Invalid setting of d_tau.' );
+                
+            end
+                        
+            cm.d_tau_priv = d_tau;
+            
+        end
+        
+        function res = get.d_tau ( cm )
+            
+            res = cm.d_tau_priv;
+            
+        end        
+           
+        function set.n_tau ( cm, n_tau )
+            % set number of positive accumulated times in each direction
+            %
+            % IN
+            %
+            % positive number
+            
+            if ( cm.b_prep )
+                
+                error( 'Tissue parameters can only be set prior to calling CoMoTk.prep.' );
+                
+            end
+            
+            if ( n_tau < 1 )
+                
+                error( 'Invalid setting of n_tau.' );
+                
+            end
+                        
+            cm.n_tau_priv = round( n_tau );
+            
+            cm.tau0 = cm.n_tau_priv + 1;
+            
+        end
+        
+        function res = get.n_tau ( cm )
+            
+            res = cm.n_tau_priv;
+            
+        end        
+        
+        function [ occ, fra ] = n_conf( cm )
+        % returns information about stored configurations in (p,tau) space
+        %
+        % OUT
+        %
+        % occ : total number of stored configurations
+        % fra : fractional occupation in each of the four CS directions
+        %
+        % remark, regarding the information returned in 'fra':
+        %
+        % any j = 1, ..., 4, the value occ( j ) takes a value from the
+        % interval [ 0, 1 ].
+        % Its definition is explained for the tau dimension (j == 4):
+        % fra( j ) = max( abs( index of stored tau ) ) / n_tau
+        %
+        % A small value at the end of the calculation indicates a
+        % potentially too cautious setting of n_tau.
+        %
+        % A value equal to 1 shows that the allocated space has been fully
+        % used in this direction. This may indicate that more space should
+        % be allocated (depending on the magnitude of the discarded
+        % configurations).
+        %
+        % The value NaN is assigned to unset directions with n_p( j ) == 0
+            
+            b = any( cm.b_occ( :, 1, :, :, :, : ), 1 );
+            
+            occ = sum( b, 'all' );
+            
+            fra = NaN( 4, 1 );
+
+            % p direction
+            
+            for j = 1 : 3
+                
+                if ( cm.n_p( j ) ~= 0 )
+                
+                    b_ = any( b, 2 + [ 1 : j-1, j+1 : 4 ] );
+                    rng = - cm.n_p( j ) : cm.n_p( j );
+                    fra( j ) = max( abs( rng( b_( : ) ) ) ) ./ cm.n_p( j );
+            
+                end
+                
+            end
+            
+            % tau direction
+            
+            b_ = any( b, 3 : 5 );
+            rng = - cm.n_tau : cm.n_tau;
+            fra( 4 ) = max( abs( rng( b_( : ) ) ) ) ./ cm.n_tau;
+            
+        end
+        
         %% set / get methods (optional variables)
+        
+        % relative B1+
         
         function set.B1 ( cm, B1 )
             % set relative B1+
@@ -494,7 +535,7 @@ classdef CoMoTk < matlab.mixin.Copyable
         % (relative) proton density of complex tissues
         % (default == 1)
         
-        function set.mu ( cm, mu )
+        function set.pd ( cm, pd )
             % set the (relative) proton density
             %
             % default = 1 (only, if cm.n_tissues == 1)
@@ -509,24 +550,26 @@ classdef CoMoTk < matlab.mixin.Copyable
             
             if ( cm.n_tissues == 0 )
                 
-                cm.n_tissues = length( mu );
+                cm.n_tissues = length( pd );
                 
-            elseif ( length( mu ) ~= cm.n_tissues )
+            elseif ( length( pd ) ~= cm.n_tissues )
                 
-                error( 'length( mu ) must be equal to number of tissues.' );
+                error( 'length( pd ) must be equal to number of tissues.' );
                 
             end
             
-            cm.mu_priv = reshape( mu, [ 1, cm.n_tissues ] );
+            cm.pd_priv = reshape( pd, [ 1, cm.n_tissues ] );
             
         end
         
-        function res = get.mu ( cm )
+        function res = get.pd ( cm )
             % return the (relative) proton density
             
-            res = cm.mu_priv;
+            res = cm.pd_priv;
             
         end
+        
+        % frequency offset due to chemical shift
         
         function set.dom ( cm, dom )
             % relative resonance frequencies of subtissues 
@@ -556,6 +599,8 @@ classdef CoMoTk < matlab.mixin.Copyable
             
         end
                 
+        % transition rate matrix (ME/MT)
+        
         function set.k ( cm, k )
             % transition rates for magnetization transfer/exchange
             %
@@ -597,157 +642,6 @@ classdef CoMoTk < matlab.mixin.Copyable
             
         end
         
-        % options
-        
-        function set.options ( cm, options )
-            % set some options
-            
-            if ( cm.b_prep )
-                
-                error( 'Too late to change options.' );
-                
-            end
-            
-            cm.options_priv = options;
-            
-        end
-        
-        function res = get.options ( cm )
-            % get actual options
-            %
-            % can be used to obtain actual defaults, before applying the
-            % associated 'set' method
-            
-            res = cm.options_priv;
-            
-        end
-        
-        %% define, which derivatives should be calculated
-        
-        function set_derivatives ( cm, param )
-            % Define the set of derivatives, to be calculated
-            %
-            % IN
-            %
-            % every parameter X, for which a first order partial derivative
-            % shall be calculated, is added to the supplied structure as a
-            % field: param.X
-            % X is from the set { 'R1', 'R2', 'D', 'B1', 'FlipAngle', 'Phase', 'tau', 'p', 's', 'S' }
-            % the length of param.X specifies further selection
-            % like specific tissue(s), RF pulse(s) (details see below)
-            
-            % prepare everything, if not done yet
-            
-            if ( ~cm.b_prep )
-                
-                cm.prep;
-                
-            end
-            
-            if ( isfield( param, 'R1' ) )
-                
-                cm.dR1 = param.R1;
-                cm.len.dR1 = length( cm.dR1 );
-                
-                % in absence if spin coupling, the following definition (and equally for R2 and D) 
-                % is a slight waste of allocated space (due to sparsity)
-                % this is done in favor of a better readable (and maintainable) code
-                
-                cm.dm.dR1 = zeros( 3, cm.n_tissues, cm.alloc_n, 1, cm.len.dR1 ); 
-                                                    
-            end
-            
-            if ( isfield( param, 'R2' ) )
-                
-                cm.dR2 = param.R2;
-                cm.len.dR2 = length( cm.dR2 );
-                cm.dm.dR2 = zeros( 3, cm.n_tissues, cm.alloc_n, 1, cm.len.dR2 ); % cf. comment for R1
-               
-            end
-            
-            if ( isfield( param, 'D' ) )
-                   
-                cm.dD = param.D;
-                cm.len.dD = length( cm.dD );
-                cm.dm.dD = zeros( 3, cm.n_tissues, cm.alloc_n, cm.dim.D, cm.len.dD ); % cf. comment for R1
-                cm.dEn_exp_dD = zeros( 3, 1, cm.alloc_n, cm.dim.D, cm.alloc_d ); 
-                                
-            end
-            
-            if ( isfield( param, 'B1' ) )
-                
-                cm.dB1 = 1;
-                cm.len.dB1 = 1;
-                cm.dm.dB1 = zeros( 3, cm.n_tissues, cm.alloc_n );
-                
-            end
-            
-            if ( isfield( param, 'FlipAngle' ) )
-                
-                cm.dFlipAngle = param.FlipAngle;
-                cm.len.dFlipAngle = length( cm.dFlipAngle );
-                cm.dm.dFlipAngle = zeros( 3, cm.n_tissues, cm.alloc_n, 1, cm.len.dFlipAngle );
-                
-            end
-            
-            if ( isfield( param, 'Phase' ) )
-                    
-                cm.dPhase = param.Phase;
-                cm.len.dPhase = length( cm.dPhase );
-                cm.dm.dPhase = zeros( 3, cm.n_tissues, cm.alloc_n, 1, cm.len.dPhase );
-                    
-            end
-            
-            if ( isfield( param, 'tau' ) )
-                    
-                cm.dtau = param.tau;
-                cm.len.dtau = length( cm.dtau );
-                cm.dm.dtau   = zeros( 3, cm.n_tissues, cm.alloc_n, 1, cm.len.dtau );
-                cm.dEn_exp_dtau = zeros( 3, cm.n_tissues, cm.alloc_n, 1, cm.len.dtau );
-                    
-            end
-                    
-            if ( isfield( param, 'p' ) )
-
-                cm.dp = param.p;
-                cm.len.dp = length( cm.dp );
-                cm.dm.dp   = zeros( 3, cm.n_tissues, cm.alloc_n, 3, cm.len.dp );
-                cm.dEn_exp_dp = zeros( 3, cm.n_tissues, cm.alloc_n, 3, cm.len.dp, cm.alloc_d );
-                
-            end
-                
-            if ( isfield( param, 's' ) )
-
-                if ( cm.diffusion == CoMoTk.No_Diff )
-                    
-                    error( 'Shape derivative without diffusion meaningless.' );
-                    
-                end
-
-                cm.ds = param.s;
-                cm.len.ds = length( cm.ds );
-                cm.dm.ds   = zeros( 3, cm.n_tissues, cm.alloc_n, 3, cm.len.ds );
-                cm.dEn_exp_ds = zeros( 1, cm.n_tissues, cm.alloc_n, 3, cm.len.ds );
-                
-            end
-            
-            if ( isfield( param, 'S' ) )
-                
-                if ( cm.diffusion == CoMoTk.No_Diff )
-                    
-                    error( 'Shape derivative without diffusion meaningless.' );
-                    
-                end
-                
-                cm.dS = param.S;
-                cm.len.dS = length( cm.dS );
-                cm.dm.dS   = zeros( 3, cm.n_tissues, cm.alloc_n, cm.dim.S, cm.len.dS );
-                cm.dEn_exp_dS = zeros( 1, cm.n_tissues, 1, cm.dim.S, cm.len.dS );
-                
-            end
-            
-        end
-        
         %% spin dynamics
         
         function RF ( cm, param )
@@ -761,12 +655,6 @@ classdef CoMoTk < matlab.mixin.Copyable
             % param.FlipAngle : flip angle [rad] (mandatory parameter)
             %
             % param.Phase     : phase [rad] (mandatory parameter)
-            % 
-            % optional parameters to identify derivatives:
-            %
-            % param.handle_FlipAngle : handle to identify flip angle
-            % 
-            % param.handle_Phase     : handle to identify phase
             % 
             % param.MT_sat           : parameters for MT saturation pulse
             % (instead of instantaneous rotation) 
@@ -806,23 +694,6 @@ classdef CoMoTk < matlab.mixin.Copyable
                 
             end
             
-            % check for derivative handles
-            
-            handle_FlipAngle = 0;
-            handle_Phase = 0;
-                
-            if ( isfield( param, 'handle_FlipAngle' ) )
-                
-                handle_FlipAngle = param.handle_FlipAngle;
-                
-            end
-            
-            if ( isfield( param, 'handle_Phase' ) )
-                
-                handle_Phase = param.handle_Phase;
-                
-            end
-            
             % calculate the rotation matrix
             
             c_al = cos( ActualFlipAngle );
@@ -844,6 +715,8 @@ classdef CoMoTk < matlab.mixin.Copyable
             
             % check for magnetization transfer (MT)
             
+            b_MT = false( 1, cm.n_tissues );
+            
             if ( isfield( param, 'MT_sat' ) )
             
                 if ( length( param.MT_sat ) ~= cm.n_tissues )
@@ -854,191 +727,45 @@ classdef CoMoTk < matlab.mixin.Copyable
                 
                 % a value > 0 is treated as a bound pool
                 
-                b_MT = param.MT_sat > 0;
-                
-            else
-                
-                b_MT = false( cm.n_tissues, 1 );
-                
+                b_MT( : ) = param.MT_sat > 0;
+                                
             end
             
             n_MT = sum( b_MT );
             
             if ( n_MT > 0 )
                 
-                % Note: derivatives not (yet) implemented in presence of MT
-                
                 if ( cm.n_tissues > n_MT ) % should be always the case..
                 
-                    cm.m( :, ~b_MT, cm.b_n ) = ...
-                        reshape( ...
+                    cm.m( cm.b_occ & ~b_MT ) = ...
                         RotMat * ...
-                        reshape( ...
-                        cm.m( :, ~b_MT, cm.b_n ), ...
-                        [ 3, ( cm.n_tissues - n_MT ) * cm.n_conf ] ), ...
-                        [ 3, ( cm.n_tissues - n_MT ), cm.n_conf ] );
+                        reshape( cm.m( cm.b_occ & ~b_MT ), 3, [] );
                     
                 end
  
                 % MT saturation affects only the longitudinal component
 
-                cm.m( 2, b_MT, cm.b_n ) = ...
-                    reshape( param.MT_sat( b_MT ), [ 1, n_MT ] ) .* cm.m( 2, b_MT, cm.b_n );
+                long_ = [ false; true; false ];
+                
+                cm.m( long_ & b_MT & cm.b_occ ) = ...
+                    reshape( param.MT_sat( b_MT ), [ 1, n_MT ] ) .* ...
+                    reshape( cm.m( long_ & b_MT & cm.b_occ ), 1, n_MT, [] );
                 
                 % since transverse magnetization is never generated, we
                 % don't need to set it to zero explicitly
 
             else
-                
-                %% calculate derivatives, if necessary
-                % This has to be done (at least for B1, FlipAngle and Phase) prior
-                % to updating the configuration vector cm.m itself.
-                % The rotation matrix does not depend on R1, R2, D, tau, p and s
-                % which simplifes the associated recursions.
-                
-                % generally valid part of chain rule
-                
-                fn = fieldnames( cm.dim );
-                
-                for i = 1 : length( fn )
-                    
-                    X = fn{ i };
-                    dX = [ 'd', X ];
-                    
-                    if ( cm.len.( dX ) > 0 )
-                        
-                        sz_tmp = [ 3, cm.n_tissues, cm.n_conf, cm.dim.( X ), cm.len.( dX ) ];
-                        
-                        % the following reshapes are required by the matrix multiplication
-                        
-                        cm.dm.( dX )( :, :, cm.b_n, :, : ) = ...
-                            reshape( ...
-                            RotMat * ...
-                            reshape( ...
-                            cm.dm.( dX )( :, :, cm.b_n, :, : ), ...
-                            [ 3, prod( sz_tmp( 2 : end ) ) ] ), ...
-                            sz_tmp );
-                        
-                    end
-                    
-                end
-                
-                % specific parts, when the derivative of the rotation matrix is nonzero
-                
-                % B1 derivative
-                
-                if ( cm.len.dB1 > 0 )
-                    
-                    dc_al = - s_al * param.FlipAngle;
-                    ds_al = c_al * param.FlipAngle;
-                    
-                    % calculate the rotation matrix
-                    
-                    dRotMat_dB1 = zeros( 3 );
-                    
-                    dRotMat_dB1( 1, 1 ) = 0.5 * dc_al;
-                    dRotMat_dB1( 1, 2 ) = - 1i * ds_al * ei_ph * CoMoTk.sqrt_0p5;
-                    dRotMat_dB1( 1, 3 ) = - 0.5 * dc_al * ei_ph^2;
-                    dRotMat_dB1( 2, 1 ) = - conj( dRotMat_dB1( 1, 2 ) );
-                    dRotMat_dB1( 2, 2 ) = dc_al;
-                    dRotMat_dB1( 2, 3 ) = - dRotMat_dB1( 1, 2 );
-                    dRotMat_dB1( 3, 1 ) = conj( dRotMat_dB1( 1, 3 ) );
-                    dRotMat_dB1( 3, 2 ) = - dRotMat_dB1( 2, 1 );
-                    dRotMat_dB1( 3, 3 ) = dRotMat_dB1( 1, 1 );
-                    
-                    cm.dm.dB1( :, :, cm.b_n ) = cm.dm.dB1( :, :, cm.b_n ) + ...
-                        reshape( ...
-                        dRotMat_dB1 * ...
-                        reshape( ...
-                        cm.m( :, :, cm.b_n ), ...
-                        [ 3, cm.n_tissues * cm.n_conf ] ), ...
-                        [ 3, cm.n_tissues, cm.n_conf ] );
-                    
-                end
-                
-                % FlipAngle derivative(s)
-                
-                if ( cm.len.dFlipAngle > 0 )
-                    
-                    [ ~, i ] = find( cm.dFlipAngle == handle_FlipAngle );
-                    
-                    if ( ~isempty( i ) )
-                        
-                        dc_al = - s_al * cm.B1;
-                        ds_al = c_al * cm.B1;
-                        
-                        % calculate the rotation matrix
-                        
-                        dRotMat_dFlipAngle = zeros( 3 );
-                        
-                        dRotMat_dFlipAngle( 1, 1 ) = 0.5 * dc_al;
-                        dRotMat_dFlipAngle( 1, 2 ) = - 1i * ds_al * ei_ph * CoMoTk.sqrt_0p5;
-                        dRotMat_dFlipAngle( 1, 3 ) = - 0.5 * dc_al * ei_ph^2;
-                        dRotMat_dFlipAngle( 2, 1 ) = - conj( dRotMat_dFlipAngle( 1, 2 ) );
-                        dRotMat_dFlipAngle( 2, 2 ) = dc_al;
-                        dRotMat_dFlipAngle( 2, 3 ) = - dRotMat_dFlipAngle( 1, 2 );
-                        dRotMat_dFlipAngle( 3, 1 ) = conj( dRotMat_dFlipAngle( 1, 3 ) );
-                        dRotMat_dFlipAngle( 3, 2 ) = - dRotMat_dFlipAngle( 2, 1 );
-                        dRotMat_dFlipAngle( 3, 3 ) = dRotMat_dFlipAngle( 1, 1 );
-                        
-                        cm.dm.dFlipAngle( :, :, cm.b_n, 1, i ) = cm.dm.dFlipAngle( :, :, cm.b_n, 1, i ) + ...
-                            reshape( ...
-                            dRotMat_dFlipAngle * ...
-                            reshape( ...
-                            cm.m( :, :, cm.b_n ), ...
-                            [ 3, cm.n_tissues * cm.n_conf ] ), ...
-                            [ 3, cm.n_tissues, cm.n_conf ] );
-                        
-                    end
-                    
-                end
-                
-                % Phase derivative(s)
-                
-                if ( cm.len.dPhase > 0 )
-                    
-                    [ ~, i ] = find( cm.dPhase == handle_Phase );
-                    
-                    if ( ~isempty( i ) )
-                        
-                        % calculate the rotation matrix
-                        
-                        dRotMat_dPhase = zeros( 3 );
-                        
-                        dRotMat_dPhase( 1, 2 ) = 1i * RotMat( 1, 2 );
-                        dRotMat_dPhase( 1, 3 ) = 2 * 1i * RotMat( 1, 3 );
-                        dRotMat_dPhase( 2, 1 ) = - conj( dRotMat_dPhase( 1, 2 ) );
-                        dRotMat_dPhase( 2, 3 ) = - dRotMat_dPhase( 1, 2 );
-                        dRotMat_dPhase( 3, 1 ) = conj( dRotMat_dPhase( 1, 3 ) );
-                        dRotMat_dPhase( 3, 2 ) = - dRotMat_dPhase( 2, 1 );
-                        
-                        cm.dm.dPhase( :, :, cm.b_n, 1, i ) = cm.dm.dPhase( :, :, cm.b_n, 1, i ) + ...
-                            reshape( ...
-                            dRotMat_dPhase * ...
-                            reshape( ...
-                            cm.m( :, :, cm.b_n ), ...
-                            [ 3, cm.n_tissues * cm.n_conf ] ), ...
-                            [ 3, cm.n_tissues, cm.n_conf ] );
-                        
-                    end
-                    
-                end
             
-                %% finally we update the configuration cm.m
+                %% update the configuration cm.m
                 
-                cm.m( :, :, cm.b_n ) = ...
-                    reshape( ...
-                    RotMat * ...
-                    reshape( ...
-                    cm.m( :, :, cm.b_n ), ...
-                    [ 3, cm.n_tissues * cm.n_conf ] ), ...
-                    [ 3, cm.n_tissues, cm.n_conf ] );
-
+                cm.m( cm.b_occ ) = ...
+                    RotMat * reshape( cm.m( cm.b_occ ), 3, [] );
+                
             end
-                        
+                               
         end
         
-        function b_is_ok = time ( cm, param )
+        function time ( cm, param )
             % Applies time interval
             %
             % IN
@@ -1046,12 +773,11 @@ classdef CoMoTk < matlab.mixin.Copyable
             % param : structure with the info about the RF pulse,
             % specifically:
             %
-            % param.lambda : unique index to identify the interval (mandatory parameter)
-            % 
-            % param.tau    : duration [ms] (mandatory in first call only)
+            % param.tau    : duration of interval [ ms ]
+            % (mandatory parameter)
             % 
             % param.p      : zero-order gradient moment [ rad / um ]
-            % (only mandatory if D ~= 0)
+            % (set to zero, if absent)
             % 
             % param.s and param.S : information about gradient shape
             % (relevant for diffusion only, otherwise ignored)
@@ -1063,149 +789,75 @@ classdef CoMoTk < matlab.mixin.Copyable
             % (required in case of bulk motion)
             %
             % param.p1     : first order gradient moment [ rad * ms / um ]
-            % (optional, only relevant in case of bulk motion)
-            %
-            % OUT
-            %
-            % b_is_ok : (bool) status, used for debugging
-            
-            % check for minimal information
-            
-            if ( ~isfield( param, 'lambda' ) )
-                
-                error( 'No ''lambda'' supplied.' );
-                
-            end
+            % (optional, only relevant in case of bulk motion)za
 
-            % prepare everything, if not done yet
+            %% prepare everything, if not done so yet
             
             if ( ~cm.b_prep )
                 
                 cm.prep;
                 
             end
-                        
-            b_is_ok = true;
             
-            if ( cm.options.debug && ~cm.check_state( 'before pre_time' ) )
-                
-                b_is_ok = false;
-                return;
-                
-            end
+            %% check for duration and zero-order gradient moment
             
-            [ idx_time, b_n_new, b_up_free_time, b_do_free_time ] = cm.pre_time( param.lambda );
-            
-            if ( cm.options.debug && ~cm.check_state( 'after pre_time' ) )
-                
-                b_is_ok = false;
-                return;
-                
-            end
-            
-            % check optional arguments
-            
-            % is interval called for the first time?
-            
-            b_new_lambda = ~cm.b_tau( idx_time );
-
-            % check for required gradient information in first call of time()
-            
-            if ( ...
-                    b_new_lambda && ...
-                    cm.diffusion ~= CoMoTk.No_Diff && ...
-                    ~isfield( param, 'p' ) )
-                
-                error( 'Diffusion requires gradient moment in first call of ''time''.' );
-                
-            end            
-            
-            % duration
+            % duration (mandatory)
             
             if ( isfield( param, 'tau' ) )
                 
-                if ( b_new_lambda )
-                    
-                    cm.b_tau( idx_time ) = true;
-                    cm.tau( idx_time ) = param.tau;
-                    
-                elseif ( cm.tau( idx_time ) ~= param.tau )
-                    
-                    error( 'Time interval tau must not change.' );
-                    
-                end
+                tau_ = param.tau;
                 
-            elseif ( b_new_lambda )
+            else
                 
-                error( 'Missing duration in first call of ''time''.' );
-
+                error( 'Time interval requires duration.' );
+                
             end
             
-            % gradient moment
+            % zero order gradient moment
             
             if ( isfield( param, 'p' ) )
                 
-                if ( b_new_lambda )
-                    
-                    cm.b_p( idx_time ) = true;
-                    cm.p( :, idx_time ) = param.p;
+                p_ = param.p( : );
+                
+            else
+                
+                p_ = zeros( 3, 1 );
+                
+            end
+ 
+            %% prepare relaxation
+            
+            E = zeros( 3, cm.n_tissues );
+            
+            E( 1, : ) = exp( - cm.R2 .* tau_ );
+            E( 2, : ) = exp( - cm.R1 .* tau_ );
+            E( 3, : ) = E( 1, : );
+            
+            %% prepare diffusion damping
+            
+            % first, set gradient shape
+            
+            if ( cm.diffusion ~= CoMoTk.No_Diff )
+                
+                if ( isfield( param, 's' ) )
+                                        
+                    s_ = param.s( : );
                     
                 else
                     
-                    if ( max( abs( cm.p( :, idx_time ) - param.p( : ) ) ) > 0 )
-                        
-                        error( 'Gradient moment p must not change.' );
-                        
-                    end
-                    
-                end
-                
-            end
-                        
-            if ( cm.diffusion ~= CoMoTk.No_Diff )
-                
-                % gradient shape (ignored, in absence of diffusion)
-                
-                if ( isfield( param, 's' ) )
-                    
-                    if ( ~b_new_lambda && ...
-                            max( abs( cm.s( :, idx_time ) - param.s( : ) ) ) > 10 * eps )
-                        
-                        % Derivatives with respect to s make only sense for those intervals,
-                        % for which the shape is not variable.
-                        % This is checked by the following statement.
-                        
-                        [ ~, i_ ] = find( cm.ds == param.lambda );
-                        
-                        if ( ~isempty( i_ ) )
-                            
-                            error( 'Derivative of variable shape makes no sense.' );
-                            
-                        end
-                        
-                        % new shape invalidates previous damping factors
-                        
-                        cm.b_En( :, idx_time ) = false;
-                        
-                    end
-                    
-                    cm.s( :, idx_time ) = param.s( : );
-                    
-                elseif ( b_new_lambda )
-                    
-                    cm.s( :, idx_time ) = cm.p( :, idx_time );
+                    s_ = p_;
                     
                 end
                 
                 if ( isfield( param, 'S' ) )
                     
-                    S_vec = zeros( cm.dim.S, 1 );
-                    
                     if ( cm.diffusion == CoMoTk.Iso_Diff )
                         
-                        S_vec( 1 ) = param.S;
+                        S_vec = param.S;
                         
                     elseif ( cm.diffusion == CoMoTk.Tensor_Diff )
+                        
+                        S_vec = zeros( 6, 1 );
                         
                         S_vec( CoMoTk.Tensor_idx.xx ) = param.S( 1, 1 );
                         S_vec( CoMoTk.Tensor_idx.yy ) = param.S( 2, 2 );
@@ -1219,41 +871,18 @@ classdef CoMoTk < matlab.mixin.Copyable
                         error( 'This should not happen.' );
                         
                     end
-                    
-                    if ( ~b_new_lambda && ...
-                            max( abs( cm.S( :, idx_time ) - S_vec( : ) ) ) > 10 * eps )
-                        
-                        % Derivatives with respect to s make only sense for those intervals,
-                        % for which the shape is not variable.
-                        % This is checked by the following statement.
-                        
-                        [ ~, i_ ] = find( cm.dS == param.lambda );
-                        
-                        if ( ~isempty( i_ ) )
-                            
-                            error( 'Derivative of variable shape makes no sense.' );
-                            
-                        end
-                        
-                        % new shape invalidates previous damping factors
-                        
-                        cm.b_En( :, idx_time ) = false;
-                        
-                    end
-
-                    cm.S( :, idx_time ) = S_vec( : );
-                    
-                elseif ( b_new_lambda )
-                    
-                    S_vec = zeros( cm.dim.S, 1 );
+                                        
+                else
                     
                     if ( cm.diffusion == CoMoTk.Iso_Diff )
                         
-                        S_vec( 1 ) = ( cm.p( :, idx_time )' * cm.p( :, idx_time ) ) / 3;
+                        S_vec = ( p_' * p_ ) / 3;
                         
                     elseif ( cm.diffusion == CoMoTk.Tensor_Diff )
                         
-                        S_tmp = ( cm.p( :, idx_time ) * cm.p( :, idx_time )' ) ./ 3;
+                        S_vec = zeros( 6, 1 );
+                        
+                        S_tmp = ( p_ * p_' ) ./ 3;
                         
                         S_vec( CoMoTk.Tensor_idx.xx ) = S_tmp( 1, 1 );
                         S_vec( CoMoTk.Tensor_idx.yy ) = S_tmp( 2, 2 );
@@ -1268,322 +897,109 @@ classdef CoMoTk < matlab.mixin.Copyable
                         
                     end
                     
-                    cm.S( :, idx_time ) = S_vec( : );
-                                        
                 end
                 
+                S_ = S_vec( : );
+
             end
             
-            % update relaxation matrices
+            % now calculate the damping factors
+
+            Diff_Damp = [];
             
-            cm.update_relaxation( idx_time );
-            
-            % chemical shift
-            
-            cs_tau = reshape( exp( - 1i .* cm.dom .* cm.tau( idx_time ) ), [ 1, cm.n_tissues ] );
+            if ( cm.diffusion ~= CoMoTk.No_Diff )
                 
-            if ( isempty( cm.k ) )              % no magnetization exchange
-                
-                %% calculate recursive update of derivatives, if necessary
-                % At least for R1, R2, D, tau, p and s, this has to be done prior
-                % to updating the configuration vector cm.m itself.
-                % The recursion coefficients do not depend on B1, FlipAngle and Phase
-                % which simplifes the associated recursions.
-                
-                % generally valid part of chain rule
-                
-                fn = fieldnames( cm.dim );
-                
-                for i = 1 : length( fn )
+                if ( cm.diffusion == CoMoTk.Iso_Diff )
                     
-                    X = fn{ i };
-                    dX = [ 'd', X ];
+                    tau_D = tau_ .* cm.D;
                     
-                    if ( cm.len.( dX ) > 0 )
-                        
-                        if ( cm.diffusion == CoMoTk.No_Diff )
-                            
-                            cm.dm.( dX )( 1, :, cm.idx_up( cm.b_n, idx_time ), :, : ) = ...
-                                cm.E( 2, :, idx_time ) .* ...
-                                cm.dm.( dX )( 1, :, cm.b_n, :, : );
-                            
-                            cm.dm.( dX )( 2, :, cm.b_n, :, : ) = ...
-                                cm.E( 1, :, idx_time ) .* ...
-                                cm.dm.( dX )( 2, :, cm.b_n, :, : );
-                            
-                            cm.dm.( dX )( 3, :, cm.idx_do( cm.b_n, idx_time ), :, : ) = ...
-                                cm.E( 2, :, idx_time ) .* ...
-                                cm.dm.( dX )( 3, :, cm.b_n, :, : );
-                            
-                        else
-                            
-                            cm.dm.( dX )( 1, :, cm.idx_up( cm.b_n, idx_time ), :, : ) = ...
-                                cm.En( 1, :, cm.b_n, idx_time ) .* ...
-                                cm.dm.( dX )( 1, :, cm.b_n, :, : );
-                            
-                            cm.dm.( dX )( 2, :, cm.b_n, :, : ) = ...
-                                cm.En( 2, :, cm.b_n, idx_time ) .* ...
-                                cm.dm.( dX )( 2, :, cm.b_n, :, : );
-                            
-                            cm.dm.( dX )( 3, :, cm.idx_do( cm.b_n, idx_time ), :, : ) = ...
-                                cm.En( 3, :, cm.b_n, idx_time ) .* ...
-                                cm.dm.( dX )( 3, :, cm.b_n, :, : );
-                            
-                        end
-                        
-                        % cleanup of free transverse configurations
-                        
-                        cm.dm.( dX )( 1, :, b_do_free_time, :, : ) = 0;
-                        cm.dm.( dX )( 3, :, b_up_free_time, :, : ) = 0;
+                    pn2 = 0;
+                    pns = 0;
+                    
+                    for i = 1 : 3
+                    
+                        pn2 = pn2 + cm.p{ i } .* cm.p{ i };
+                        pns = pns + cm.p{ i } .* s_( i );
                         
                     end
+                                        
+                    Diff_Damp_exp = zeros( [ 3, 1, 2 * cm.n_p + 1 ] );
                     
-                end
-                
-                % specific parts, when the derivative of the damping matrix and/or the recovery term is nonzero
-                
-                % R1 derivative(s)
-                
-                if ( cm.len.dR1 > 0 )
+                    Diff_Damp_exp( 1, 1, :, :, : ) = - ( pn2 + pns + S_ );
+                    Diff_Damp_exp( 2, 1, :, :, : ) = - pn2;
+                    Diff_Damp_exp( 3, 1, :, :, : ) = - ( pn2 - pns + S_ );
                     
-                    for i = 1 : cm.len.dR1
-                        
-                        if ( cm.diffusion == CoMoTk.No_Diff )
-                            
-                            cm.dm.dR1( 2, cm.dR1( i ), cm.b_n, 1, i ) = ...
-                                cm.dm.dR1( 2, cm.dR1( i ), cm.b_n, 1, i ) - ...
-                                cm.tau( idx_time ) .* cm.E( 1, cm.dR1( i ), idx_time ) .* cm.m( 2, cm.dR1( i ), cm.b_n );
-                            
-                        else
-                            
-                            cm.dm.dR1( 2, cm.dR1( i ), cm.b_n, 1, i ) = ...
-                                cm.dm.dR1( 2, cm.dR1( i ), cm.b_n, 1, i ) - ...
-                                cm.tau( idx_time ) .* cm.En( 2, cm.dR1( i ), cm.b_n, idx_time ) .* cm.m( 2, cm.dR1( i ), cm.b_n ); ...
-                                
-                        end
-                        
-                        cm.dm.dR1( 2, cm.dR1( i ), cm.null_idx, 1, i ) = ...
-                            cm.dm.dR1( 2, cm.dR1( i ), cm.null_idx, 1, i ) + ...
-                            cm.mu( cm.dR1( i ) ) .* cm.tau( idx_time ) .* cm.E( 1, cm.dR1( i ), idx_time );
-                        
-                    end
+                    % finalize exponent
                     
-                end
-                
-                % R2 derivative(s)
-                
-                if ( cm.len.dR2 > 0 )
+                    Diff_Damp_exp = tau_D .* Diff_Damp_exp + zeros( [ ones( 1, 5 ), 2 * cm.n_tau + 1 ] );
                     
-                    for i = 1 : cm.len.dR2
+                elseif ( cm.diffusion == CoMoTk.Tensor_Diff )
+                    
+                    pnDpn = 0;
+                    pnDs = 0;
+                    
+                    for i = 1 : 3
+
+                        for j = 1 : 3
                         
-                        if ( cm.diffusion == CoMoTk.No_Diff )
-                            
-                            cm.dm.dR2( 1, cm.dR2( i ), cm.idx_up( cm.b_n, idx_time ), 1, i ) = ...
-                                cm.dm.dR2( 1, cm.dR2( i ), cm.idx_up( cm.b_n, idx_time ), 1, i ) - ...
-                                cm.tau( idx_time ) .* cs_tau( cm.dR2( i ) ) .* cm.E( 2, cm.dR2( i ), idx_time ) .* cm.m( 1, cm.dR2( i ), cm.b_n );
-                            
-                            cm.dm.dR2( 3, cm.dR2( i ), cm.idx_do( cm.b_n, idx_time ), 1, i ) = ...
-                                cm.dm.dR2( 3, cm.dR2( i ), cm.idx_do( cm.b_n, idx_time ), 1, i ) - ...
-                                cm.tau( idx_time ) .* conj( cs_tau( cm.dR2( i ) ) ) .* cm.E( 2, cm.dR2( i ), idx_time ) .* cm.m( 3, cm.dR2( i ), cm.b_n );
-                            
-                        else
-                            
-                            cm.dm.dR2( 1, cm.dR2( i ), cm.idx_up( cm.b_n, idx_time ), 1, i ) = ...
-                                cm.dm.dR2( 1, cm.dR2( i ), cm.idx_up( cm.b_n, idx_time ), 1, i ) - ...
-                                cm.tau( idx_time ) .* cs_tau( cm.dR2( i ) ) .* cm.En( 1, cm.dR2( i ), cm.b_n, idx_time ) .* cm.m( 1, cm.dR2( i ), cm.b_n );
-                            
-                            cm.dm.dR2( 3, cm.dR2( i ), cm.idx_do( cm.b_n, idx_time ), 1, i ) = ...
-                                cm.dm.dR2( 3, cm.dR2( i ), cm.idx_do( cm.b_n, idx_time ), 1, i ) - ...
-                                cm.tau( idx_time ) .* conj( cs_tau( cm.dR2( i ) ) ) .* cm.En( 3, cm.dR2( i ), cm.b_n, idx_time ) .* cm.m( 3, cm.dR2( i ), cm.b_n );
-                            
+                            pnDpn = pnDpn + cm.p{ i } .* cm.D( i, j ) .* cm.p{ j };
+                            pnDs = pnDs + cm.p{ i } .* cm.D( i, j ) .* s_( j );
+                       
                         end
                         
                     end
+                                        
+                    DS = reshape( sum( cm.D_vec .* S_, 1 ), [ 1, cm.n_tissues ] );
                     
-                end
-                
-                % D derivative(s)
-                
-                if ( cm.len.dD > 0 )
+                    Diff_Damp_exp = zeros( [ 3, 1, 2 * cm.n_p + 1 ] );
                     
-                    for i = 1 : cm.len.dD
-                        
-                        cm.dm.dD( 1, cm.dD( i ), cm.idx_up( cm.b_n, idx_time ), :, i ) = ...
-                            cm.dm.dD( 1, cm.dD( i ), cm.idx_up( cm.b_n, idx_time ), :, i ) + ...
-                            cs_tau( cm.dD( i ) ) .* ...
-                            cm.dEn_exp_dD( 1, 1, cm.b_n, :, idx_time ) .* ...
-                            cm.En( 1, cm.dD( i ), cm.b_n, idx_time ) .* ...
-                            cm.m( 1, cm.dD( i ), cm.b_n );
-                        
-                        cm.dm.dD( 2, cm.dD( i ), cm.b_n, :, i ) = ...
-                            cm.dm.dD( 2, cm.dD( i ), cm.b_n, :, i ) + ...
-                            cm.dEn_exp_dD( 2, 1, cm.b_n, :, idx_time ) .* ...
-                            cm.En( 2, cm.dD( i ), cm.b_n, idx_time ) .* ...
-                            cm.m( 2, cm.dD( i ), cm.b_n );
-                        
-                        cm.dm.dD( 3, cm.dD( i ), cm.idx_do( cm.b_n, idx_time ), :, i ) = ...
-                            cm.dm.dD( 3, cm.dD( i ), cm.idx_do( cm.b_n, idx_time ), :, i ) + ...
-                            conj( cs_tau( cm.dD( i ) ) ) .* ...
-                            cm.dEn_exp_dD( 3, 1, cm.b_n, :, idx_time ) .* ...
-                            cm.En( 3, cm.dD( i ), cm.b_n, idx_time ) .* ...
-                            cm.m( 3, cm.dD( i ), cm.b_n );
-                        
-                    end
+                    Diff_Damp_exp( 1, 1, :, :, : ) = - ( pnDpn + pnDs + DS );
+                    Diff_Damp_exp( 2, 1, :, :, : ) = - pnDpn;
+                    Diff_Damp_exp( 3, 1, :, :, : ) = - ( pnDpn - pnDs + DS );
+                                        
+                    % finalize exponent
                     
-                end
-                
-                % tau derivative(s)
-                
-                if ( cm.len.dtau > 0 )
-                    
-                    [ ~, i ] = find( cm.dtau == param.lambda );
-                    
-                    if ( ~isempty( i ) )
-                        
-                        if ( cm.diffusion == CoMoTk.No_Diff )
-                            
-                            cm.dm.dtau( 1, :, cm.idx_up( cm.b_n, idx_time ), 1, i ) = ...
-                                cm.dm.dtau( 1, :, cm.idx_up( cm.b_n, idx_time ), 1, i ) - ...
-                                cm.R2 .* cs_tau .* cm.E( 2, :, idx_time ) .* cm.m( 1, :, cm.b_n );
-                            
-                            cm.dm.dtau( 2, :, cm.b_n, 1, i ) = ...
-                                cm.dm.dtau( 2, :, cm.b_n, 1, i ) - ...
-                                cm.R1 .* cm.E( 1, :, idx_time ) .* cm.m( 2, :, cm.b_n );
-                            
-                            cm.dm.dtau( 3, :, cm.idx_do( cm.b_n, idx_time ), 1, i ) = ...
-                                cm.dm.dtau( 3, :, cm.idx_do( cm.b_n, idx_time ), 1, i ) - ...
-                                cm.R2 .* conj( cs_tau ) .* cm.E( 2, :, idx_time ) .* cm.m( 3, :, cm.b_n );
-                            
-                        else
-                            
-                            cm.dm.dtau( 1, :, cm.idx_up( cm.b_n, idx_time ), 1, i ) = ...
-                                cm.dm.dtau( 1, :, cm.idx_up( cm.b_n, idx_time ), 1, i ) + ...
-                                ( cm.dEn_exp_dtau( 1, :, cm.b_n, 1, i ) - cm.R2 ) .* ...
-                                cs_tau .* cm.En( 1, :, cm.b_n, idx_time ) .* cm.m( 1, :, cm.b_n );
-                            
-                            cm.dm.dtau( 2, :, cm.b_n, 1, i ) = ...
-                                cm.dm.dtau( 2, :, cm.b_n, 1, i ) + ...
-                                ( cm.dEn_exp_dtau( 2, :, cm.b_n, 1, i ) - cm.R1 ).* ...
-                                cm.En( 2, :, cm.b_n, idx_time ) .* cm.m( 2, :, cm.b_n );
-                            
-                            cm.dm.dtau( 3, :, cm.idx_do( cm.b_n, idx_time ), 1, i ) = ...
-                                cm.dm.dtau( 3, :, cm.idx_do( cm.b_n, idx_time ), 1, i ) + ...
-                                ( cm.dEn_exp_dtau( 3, :, cm.b_n, 1, i ) - cm.R2 ) .* ...
-                                conj( cs_tau ) .* cm.En( 3, :, cm.b_n, idx_time ) .* cm.m( 3, :, cm.b_n );
-                            
-                        end
-                        
-                        cm.dm.dtau( 2, :, cm.null_idx, 1, i ) = cm.dm.dtau( 2, :, cm.null_idx, 1, i ) + ...
-                            cm.mu .* cm.R1 .* cm.E( 1, :, idx_time );
-                        
-                    end
-                    
-                end
-                
-                % p derivative(s)
-                
-                if ( cm.len.dp > 0 )
-                    
-                    cm.dm.dp( 1, :, cm.idx_up( cm.b_n, idx_time ), :, : ) = ...
-                        cm.dm.dp( 1, :, cm.idx_up( cm.b_n, idx_time ), :, : ) + ...
-                        cs_tau .* ...
-                        cm.dEn_exp_dp( 1, :, cm.b_n, :, :, idx_time ) .* ...
-                        cm.En( 1, :, cm.b_n, idx_time ) .* ...
-                        cm.m( 1, :, cm.b_n );
-                    
-                    cm.dm.dp( 2, :, cm.b_n, :, : ) = ...
-                        cm.dm.dp( 2, :, cm.b_n, :, : ) + ...
-                        cm.dEn_exp_dp( 2, :, cm.b_n, :, :, idx_time ) .* ...
-                        cm.En( 2, :, cm.b_n, idx_time ) .* ...
-                        cm.m( 2, :, cm.b_n );
-                    
-                    cm.dm.dp( 3, :, cm.idx_do( cm.b_n, idx_time ), :, : ) = ...
-                        cm.dm.dp( 3, :, cm.idx_do( cm.b_n, idx_time ), :, : ) + ...
-                        conj( cs_tau ) .* cm.dEn_exp_dp( 3, :, cm.b_n, :, :, idx_time ) .* ...
-                        cm.En( 3, :, cm.b_n, idx_time ) .* ...
-                        cm.m( 3, :, cm.b_n );
-                    
-                end
-                
-                % s derivative(s)
-                
-                if ( cm.len.ds > 0 )
-                    
-                    [ ~, i ] = find( cm.ds == param.lambda );
-                    
-                    if ( ~isempty( i ) )
-                        
-                        cm.dm.ds( 1, :, cm.idx_up( cm.b_n, idx_time ), :, i ) = ...
-                            cm.dm.ds( 1, :, cm.idx_up( cm.b_n, idx_time ), :, i ) + ...
-                            cs_tau .* cm.dEn_exp_ds( 1, :, cm.b_n, :, i ) .* cm.En( 1, :, cm.b_n, idx_time ) .* cm.m( 1, :, cm.b_n );
-                        
-                        cm.dm.ds( 3, :, cm.idx_do( cm.b_n, idx_time ), :, i ) = ...
-                            cm.dm.ds( 3, :, cm.idx_do( cm.b_n, idx_time ), :, i ) - ...
-                            conj( cs_tau ) .* cm.dEn_exp_ds( 1, :, cm.b_n, :, i ) .* cm.En( 3, :, cm.b_n, idx_time ) .* cm.m( 3, :, cm.b_n );
-                        
-                    end
-                    
-                end
-                
-                % S derivative(s)
-                
-                if ( cm.len.dS > 0 )
-                    
-                    [ ~, i ] = find( cm.dS == param.lambda );
-                    
-                    if ( ~isempty( i ) )
-                        
-                        cm.dm.dS( 1, :, cm.idx_up( cm.b_n, idx_time ), :, i ) = ...
-                            cm.dm.dS( 1, :, cm.idx_up( cm.b_n, idx_time ), :, i ) + ...
-                            cs_tau .* cm.dEn_exp_dS( 1, :, 1, :, i ) .* cm.En( 1, :, cm.b_n, idx_time ) .* cm.m( 1, :, cm.b_n );
-                        
-                        cm.dm.dS( 3, :, cm.idx_do( cm.b_n, idx_time ), :, i ) = ...
-                            cm.dm.dS( 3, :, cm.idx_do( cm.b_n, idx_time ), :, i ) + ...
-                            conj( cs_tau ) .* cm.dEn_exp_dS( 1, :, 1, :, i ) .* cm.En( 3, :, cm.b_n, idx_time ) .* cm.m( 3, :, cm.b_n );
-                        
-                    end
-                    
-                end
-                
-                %% finally we update the configuration cm.m
-                
-                % relaxation
-                
-                if ( cm.diffusion == CoMoTk.No_Diff )
-                    
-                    cm.m( 1, :, cm.idx_up( cm.b_n, idx_time ) ) = ...
-                        cs_tau .* cm.E( 2, :, idx_time ) .* cm.m( 1, :, cm.b_n );
-                    
-                    cm.m( 2, :, cm.b_n ) = ...
-                        cm.E( 1, :, idx_time ) .* cm.m( 2, :, cm.b_n );
-                    
-                    cm.m( 3, :, cm.idx_do( cm.b_n, idx_time ) ) = ...
-                        conj( cs_tau ) .* cm.E( 2, :, idx_time ) .* cm.m( 3, :, cm.b_n );
+                    Diff_Damp_exp = tau_ .* Diff_Damp_exp + zeros( [ ones( 1, 5 ), 2 * cm.n_tau + 1 ] );
                     
                 else
                     
-                    cm.m( 1, :, cm.idx_up( cm.b_n, idx_time ) ) = ...
-                        cs_tau .* cm.En( 1, :, cm.b_n, idx_time ) .* cm.m( 1, :, cm.b_n );
+                    error( 'Unexpected value for ''cm.diffusion''.' );
                     
-                    cm.m( 2, :, cm.b_n ) = ...
-                        cm.En( 2, :, cm.b_n, idx_time ) .* cm.m( 2, :, cm.b_n );
+                end
                     
-                    cm.m( 3, :, cm.idx_do( cm.b_n, idx_time ) ) = ...
-                        conj( cs_tau ) .* cm.En( 3, :, cm.b_n, idx_time ) .* cm.m( 3, :, cm.b_n );
+                % update diffusion damping factors
+                    
+                Diff_Damp = exp( Diff_Damp_exp( cm.b_occ ) );
+                    
+            end
+            
+            %% initialize chemical shift
+            
+            cs_tau = ones( 3, cm.n_tissues );
+            
+            cs_tau( 1, : ) = exp( - 1i .* cm.dom .* tau_ );
+            cs_tau( 3, : ) = conj( cs_tau( 1, : ) );    
+           
+            %% execute: relaxation, chemical shift, diffusion damping, chemical exchange
+            
+            if ( isempty( cm.k ) )              % no magnetization exchange
+                
+                %% update the configuration cm.m
+                
+                % chemical shift and relaxation                
+                
+                cm.m( cm.b_occ ) = ( cs_tau .* E ) .* reshape( cm.m( cm.b_occ ), 3, cm.n_tissues, [] );
+                            
+                % diffusion damping, if relevant
+                
+                if ( ~isempty( Diff_Damp ) )
+
+                    cm.m( cm.b_occ ) = Diff_Damp .* cm.m( cm.b_occ );
                     
                 end
                 
-                cm.m( 1, :, b_do_free_time ) = 0;
-                cm.m( 3, :, b_up_free_time ) = 0;
-                
-                % repolarization (here, the relative proton densities come into play)
-                
-                cm.m( 2, :, cm.null_idx ) = cm.m( 2, :, cm.null_idx ) + cm.mu .* ( 1 - cm.E( 1, :, idx_time ) );
-                
             else                              % with magnetization exchange
 
-                %% magnetization exchange
-                
                 b_inf_R2 = isinf( cm.R2 );
                 
                 if ( any( b_inf_R2 ) ) 
@@ -1642,70 +1058,29 @@ classdef CoMoTk < matlab.mixin.Copyable
                 
                 Y_0 = cm.k - diag( cm.R1( : ) );
 
-                exp_Y_tau_1 = expm( Y_1 .* cm.tau( idx_time ) );
-                exp_Y_tau_0 = expm( Y_0 .* cm.tau( idx_time ) );
+                exp_Y_tau_1 = expm( Y_1 .* tau_ );
+                exp_Y_tau_0 = expm( Y_0 .* tau_ );
 
-                y = cm.R1( : ) .* cm.mu( : );
+                y = cm.R1( : ) .* cm.pd( : );
                 
                 % relaxation
+                  
+                co_ = eye( 3 ) ~= 0;    % to access components via logical indexing
                 
-                cm.m( 1, :, cm.idx_up( cm.b_n, idx_time ) ) = ...
+                cm.m( co_( :, 1 ) & cm.b_occ ) = ...
                     exp_Y_tau_1 * ...
-                    reshape( ...
-                    cm.m( 1, :, cm.b_n ), ...
-                    [ cm.n_tissues, cm.n_conf ] );
+                    reshape( cm.m( co_( :, 1 ) & cm.b_occ ), cm.n_tissues, [] );
                 
-                cm.m( 2, :, cm.b_n ) = ...7
+                cm.m( co_( :, 2 ) & cm.b_occ ) = ...
                     exp_Y_tau_0 * ...
-                    reshape( ...
-                    cm.m( 2, :, cm.b_n ), ...
-                    [ cm.n_tissues, cm.n_conf ] );
+                    reshape( cm.m( co_( :, 2 ) & cm.b_occ ), cm.n_tissues, [] );
                 
-                cm.m( 3, :, cm.idx_do( cm.b_n, idx_time ) ) = ...
+                cm.m( co_( :, 3 ) & cm.b_occ ) = ...
                     conj( exp_Y_tau_1 ) * ...
-                    reshape( ...
-                    cm.m( 3, :, cm.b_n ), ...
-                    [ cm.n_tissues, cm.n_conf ] );
-                
-                cm.m( 1, :, b_do_free_time ) = 0;
-                cm.m( 3, :, b_up_free_time ) = 0;
-                
-                % repolarization (here, the relative proton densities come into play)
-                
-                cm.m( 2, :, cm.null_idx ) = cm.m( 2, :, cm.null_idx ) - ...
-                    reshape( ...
-                    Y_0 \ ( ( eye( cm.n_tissues ) - exp_Y_tau_0 ) * y ), ...
-                    [ 1, cm.n_tissues ] );
+                    reshape( cm.m( co_( :, 3 ) & cm.b_occ ), cm.n_tissues, [] );
                 
             end
-            
-            % perform final bookkeeping                        
-            
-            cm.post_time( b_n_new );
-            
-            if ( cm.options.debug && ~cm.check_state( 'after post_time' ) )
-                
-                b_is_ok = false;
-                return;
-                
-            end
-           
-            % remove negligible configurations
-            
-            if( ~cm.meltdown )
-                
-                b_is_ok = false;
-                return;
-                
-            end
-            
-            if ( cm.options.debug && ~cm.check_state( 'after meltdown' ) )
-                
-                b_is_ok = false;
-                return;
-                
-            end
-            
+                       
             % bulk motion due to constant velocity during the interval
             
             if ( isfield( param, 'v' ) )
@@ -1734,23 +1109,181 @@ classdef CoMoTk < matlab.mixin.Copyable
                     
                     % NOTE: nonzero velocities are currently not taken into account, when calculating derivatives!
                     
-                    dth = - ( 0.5 * cm.tau( idx_time ) ) * ( cm.p( :, idx_time )' * param.v( : ) );
+                    dth = - ( 0.5 * tau_ ) * ( p_' * param.v( : ) );
                     
                 end
                 
-                dth = dth - cm.p( :, idx_time )' * param.x( : );
+                dth = dth - p_' * param.x( : );
                 
                 ei_dth = exp( 1i * dth );
                 
-                cm.m( 1, cm.b_n ) = ei_dth .* cm.m( 1, cm.b_n );
-                cm.m( 3, cm.b_n ) = conj( ei_dth ) .* cm.m( 3, cm.b_n );
+                co_ = eye( 3 ) ~= 0;    % to access components via logical indexing
+     
+                cm.m( co_( :, 1 ) & cm.b_occ ) = ...
+                    ei_dth .* cm.m( co_( :, 1 ) & cm.b_occ );
+                
+                cm.m( co_( :, 3 ) & cm.b_occ ) = ...
+                    conj( ei_dth ) .* cm.m( co_( :, 3 ) & cm.b_occ );
                 
             end
             
-            % update configuration dependent time and gradient
+            %% execute shift in configuration space
             
-            cm.update_tau_n;
-            cm.update_p_n;
+            % we do this for each direction
+            
+            p_shift = zeros( 3, 1 );
+            
+            for i = 1 : 3
+                
+                if ( p_( i ) ~= 0 )
+                    
+                    if ( cm.d_p( i ) == 0 )
+                        
+                        error( 'Nonzero moment in unexpected direction.' );
+                        
+                    end
+                    
+                    p_shift( i ) = round( p_( i ) / cm.d_p( i ) );
+                    
+                end
+
+                if ( p_shift( i ) ~= 0 )
+                    
+                    cm.m( 1, :, :, :, :, : ) = circshift( ...
+                        cm.m( 1, :, :, :, :, : ), p_shift( i ), i + 2 );
+            
+                    cm.m( 3, :, :, :, :, : ) = circshift( ...
+                        cm.m( 3, :, :, :, :, : ), - p_shift( i ), i + 2 );
+            
+                    cm.b_occ( 1, :, :, :, :, : ) = circshift( ...
+                        cm.b_occ( 1, :, :, :, :, : ), p_shift( i ), i + 2 );
+            
+                    cm.b_occ( 3, :, :, :, :, : ) = circshift( ...
+                        cm.b_occ( 3, :, :, :, :, : ), - p_shift( i ), i + 2 );
+            
+                end
+                
+            end
+            
+            tau_shift = round( tau_ / cm.d_tau );
+            
+            if ( tau_shift ~= 0 )
+                
+                cm.m( 1, :, :, :, :, : ) = circshift( ...
+                    cm.m( 1, :, :, :, :, : ), tau_shift, 6 );
+                
+                cm.m( 3, :, :, :, :, : ) = circshift( ...
+                    cm.m( 3, :, :, :, :, : ), - tau_shift, 6 );
+                
+                cm.b_occ( 1, :, :, :, :, : ) = circshift( ...
+                    cm.b_occ( 1, :, :, :, :, : ), tau_shift, 6 );
+                
+                cm.b_occ( 3, :, :, :, :, : ) = circshift( ...
+                    cm.b_occ( 3, :, :, :, :, : ), - tau_shift, 6 );
+                
+            end
+            
+            % now we must invalidate unoccupied locations for each
+            % direction
+            
+            if ( p_shift( 1 ) > 0 )
+               
+                cm.m( 1, :, 1 : p_shift( 1 ), :, :, : ) = 0;
+                cm.m( 3, :, end - p_shift( 1 ) + 1 : end, :, :, : ) = 0;
+
+                cm.b_occ( 1, :, 1 : p_shift( 1 ), :, :, : ) = false;
+                cm.b_occ( 3, :, end - p_shift( 1 ) + 1 : end, :, :, : ) = false;
+                
+            elseif ( p_shift( 1 ) < 0 )
+                
+                cm.m( 3, :, 1 : - p_shift( 1 ), :, :, : ) = 0;
+                cm.m( 1, :, end + p_shift( 1 ) + 1 : end, :, :, : ) = 0;
+
+                cm.b_occ( 3, :, 1 : - p_shift( 1 ), :, :, : ) = false;
+                cm.b_occ( 1, :, end + p_shift( 1 ) + 1 : end, :, :, : ) = false;
+                
+            end
+            
+            if ( p_shift( 2 ) > 0 )
+               
+                cm.m( 1, :, :, 1 : p_shift( 2 ), :, : ) = 0;
+                cm.m( 3, :, :, end - p_shift( 2 ) + 1 : end, :, : ) = 0;
+
+                cm.b_occ( 1, :, :, 1 : p_shift( 2 ), :, : ) = false;
+                cm.b_occ( 3, :, :, end - p_shift( 2 ) + 1 : end, :, : ) = false;
+                
+            elseif ( p_shift( 2 ) < 0 )
+                
+                cm.m( 3, :, :, 1 : - p_shift( 2 ), :, : ) = 0;
+                cm.m( 1, :, :, end + p_shift( 2 ) + 1 : end, :, : ) = 0;
+
+                cm.b_occ( 3, :, :, 1 : - p_shift( 2 ), :, : ) = false;
+                cm.b_occ( 1, :, :, end + p_shift( 2 ) + 1 : end, :, : ) = false;
+                
+            end
+            
+            if ( p_shift( 3 ) > 0 )
+               
+                cm.m( 1, :, :, :, 1 : p_shift( 3 ), : ) = 0;
+                cm.m( 3, :, :, :, end - p_shift( 3 ) + 1 : end, : ) = 0;
+
+                cm.b_occ( 1, :, :, :, 1 : p_shift( 3 ), : ) = false;
+                cm.b_occ( 3, :, :, :, end - p_shift( 3 ) + 1 : end, : ) = false;
+                
+            elseif ( p_shift( 3 ) < 0 )
+                
+                cm.m( 3, :, :, :, 1 : - p_shift( 3 ), : ) = 0;
+                cm.m( 1, :, :, :, end + p_shift( 3 ) + 1 : end, : ) = 0;
+
+                cm.b_occ( 3, :, :, :, 1 : - p_shift( 3 ), : ) = false;
+                cm.b_occ( 1, :, :, :, end + p_shift( 3 ) + 1 : end, : ) = false;
+                
+            end
+            
+            if ( tau_shift > 0 )
+               
+                cm.m( 1, :, :, :, :, 1 : tau_shift ) = 0;
+                cm.m( 3, :, :, :, :, end - tau_shift + 1 : end ) = 0;
+
+                cm.b_occ( 1, :, :, :, :, 1 : tau_shift ) = false;
+                cm.b_occ( 3, :, :, :, :, end - tau_shift + 1 : end ) = false;
+                
+            elseif ( tau_shift < 0 )
+                
+                cm.m( 3, :, :, :, :, 1 : - tau_shift ) = 0;
+                cm.m( 1, :, :, :, :, end + tau_shift + 1 : end ) = 0;
+
+                cm.b_occ( 3, :, :, :, :, 1 : - tau_shift ) = false;
+                cm.b_occ( 1, :, :, :, :, end + tau_shift + 1 : end ) = false;
+                
+            end
+            
+            % to make life easier, we do not distinguish the occupation
+            % of different components
+            
+            b_ = any( cm.b_occ, 1 );
+            
+            sz_ = size( cm.b_occ );
+            
+            cm.b_occ = reshape( repmat( reshape( b_, 1, [] ), [ sz_( 1 ), 1 ] ), sz_ );
+            
+            %% repolarization
+            
+            if ( isempty( cm.k ) )              % no magnetization exchange
+                                
+                cm.m( 2, :, cm.p0( 1 ), cm.p0( 2 ), cm.p0( 3 ), cm.tau0 ) = ...
+                    cm.m( 2, :, cm.p0( 1 ), cm.p0( 2 ), cm.p0( 3 ), cm.tau0 ) + ...
+                    cm.pd .* ( 1 - E( 2, : ) );
+                
+            else                              % with magnetization exchange
+
+                % (here, the relative proton densities come into play)
+                
+                cm.m( 2, :, cm.p0( 1 ), cm.p0( 2 ), cm.p0( 3 ), cm.tau0 ) = ...
+                    cm.m( 2, :, cm.p0( 1 ), cm.p0( 2 ), cm.p0( 3 ), cm.tau0 ) - ...
+                    reshape( Y_0 \ ( ( eye( cm.n_tissues ) - exp_Y_tau_0 ) * y ), [ 1, cm.n_tissues ] );
+                
+            end            
             
         end
         
@@ -1765,12 +1298,8 @@ classdef CoMoTk < matlab.mixin.Copyable
             
             % set all transverse magnetization to zero (instantaneously)
            
-            cm.m( [ 1, 3 ], :, cm.b_n ) = 0;
-            
-            % remove negligible configurations
-            
-            cm.meltdown;
-            
+            cm.m( [ 1, 3 ], :, :, :, :, : ) = 0;
+                        
         end
         
         %% get results
@@ -1839,7 +1368,7 @@ classdef CoMoTk < matlab.mixin.Copyable
             % structure param (if empty, complete sum over all stored
             % configurations is returned)
             %
-            % param.b_n : over which configurations shall the sum be taken?
+            % param.b_occ : over which configurations shall the sum be taken?
             % (optional)
             % (if field is missing, the sum is over all stored
             % configurations)
@@ -1851,9 +1380,6 @@ classdef CoMoTk < matlab.mixin.Copyable
             % param.x : position vector [ um ] (optional)
             % (== zero vector, if field is missing)
             % may have a second dimension
-            % 
-            % param.w_n : external weighting factors (optional, if supplied, 
-            % size needs to match the number of addends in the CM sum)
             %
             % decay due to inhomogeneous broadening is taken into account,
             % if cm.inhomogeneous_decay is nonempty
@@ -1872,36 +1398,27 @@ classdef CoMoTk < matlab.mixin.Copyable
             %
             % res.dx.dX : same for longitudinal component
             
-            if ( ~isempty( param ) && isfield( param, 'b_n' ) )
+            if ( ~isempty( param ) && isfield( param, 'b_occ' ) )
                 
-                b_n_ = param.b_n;
+                b_occ_ = param.b_occ;
                 
             else
                 
-                b_n_ = cm.b_n;
+                b_occ_ = cm.b_occ;
                 
             end
             
-            n_c = sum( b_n_ );
+            % restriction to configuration space
             
-            if ( n_c == 0 )
-                
-                res = [];
-                return;
-                
-            end
-            
+            b_occ_pure = b_occ_( 1, 1, :, :, :, : );
+               
             % initialize weigthing factor
-
-            if ( ~isempty( param ) && isfield( param, 'w_n' ) )
-                
-                w_n_ = reshape( param.w_n, [ 1, length( param.w_n ) ] );
-                
-            else   % no explicit weights provided
-                
-                w_n_ = 1;
-                
-            end
+            % could also be used for external weighting (currently not
+            % implemented)
+            % final expected size (if not equal to one) 
+            % == [ 1, n_occ, n_om, n_x ]
+            
+            w_n_ = 1;
 
             % off-resonance(s)
             
@@ -1911,8 +1428,12 @@ classdef CoMoTk < matlab.mixin.Copyable
                 omega_ = reshape( param.omega, [ 1, 1, n_om ] );
                 
                 % update weights
+                % size( w_n_ ) == [ 1, n_occ, n_om ]
                 
-                w_n_ = w_n_ .* exp( - 1i .* omega_ .* reshape( cm.tau_n( b_n_ ), [ 1, n_c ] ) );
+                tau_ = cm.tau + zeros( size( b_occ_pure ) );
+                
+                w_n_ = w_n_ .* exp( - 1i .* omega_ .* ...
+                    reshape( tau_( b_occ_pure ), 1, [] ) );
             
             end
 
@@ -1921,9 +1442,26 @@ classdef CoMoTk < matlab.mixin.Copyable
             if ( ~isempty( param ) && isfield( param, 'x' ) )
                 
                 n_x = size( param.x, 2 );
-                x_ = reshape( param.x, [ 3, 1, 1, n_x ] );
+                x_ = reshape( param.x, [ 3, ones( 1, 5 ), n_x ] );
+                                
+                % update weights
+                % size( w_n_ ) == [ 1, n_occ, n_om, n_x ]
                 
-                w_n_ = w_n_ .* exp ( - 1i .* sum( cm.p_n( :, b_n_ ) .* x_, 1 ) );
+                px_ = 0;
+                
+                for i = 1 : 3
+                    
+                    px_ = px_ + cm.p{ i } .* x_( i, 1, 1, 1, 1, 1, : );
+                    
+                end
+                
+                px_ = px_ + zeros( [ ones( 1, 5 ), size( b_occ_pure, 6 ) ] );
+                
+                n_occ = sum( b_occ_pure( : ) );
+                
+                px_ = reshape( px_( b_occ_pure & true( [ ones( 1, 6 ), n_x ] ) ), [ 1, n_occ, 1, n_x ] );
+                
+                w_n_ = w_n_ .* exp ( - 1i .* px_ );
                 
             end
             
@@ -1931,46 +1469,23 @@ classdef CoMoTk < matlab.mixin.Copyable
             
             if ( ~isempty( cm.inhomogeneous_decay ) )
                 
-                w_n_ = w_n_ .* cm.inhomogeneous_decay( cm.tau_n( b_n_ ), param );
+                w_n_ = w_n_ .* cm.inhomogeneous_decay( cm.tau( b_occ_pure ), param );
                 
             end
             
             % calculate the isochromat
             
+            b_10 = [ true; true; false ];
+            
             tmp_ = reshape( ...
-                sum( cm.m( 1 : 2 , :, b_n_ ) .* reshape( w_n_, [ 1, size( w_n_ ) ] ), 2 : 3 ), ...
+                sum( ...
+                reshape( cm.m( b_10 & b_occ_ ), 2, cm.n_tissues, [] ) .* ...
+                reshape( w_n_, [ 1, size( w_n_ ) ] ), 2 : 3 ), ...
                 [ 2, size( w_n_, 3 : 4 ) ] );
             
             res.xy = CoMoTk.sqrt_2 .* tmp_( 1, :, : );
             res.z = tmp_( 2, :, : );
             
-            % and the calculated derivatives
-            
-            fn = fieldnames( cm.dim );
-            
-            for i = 1 : length( fn )
-                
-                X = fn{ i };
-                dX = [ 'd', X ];
-                
-                if ( cm.len.( dX ) > 0 )
-                    
-                    res.dxy.( dX ) = reshape( ...
-                        CoMoTk.sqrt_2 .* sum( sum( ...
-                        w_n_ .* cm.dm.( dX )( 1, :, b_n_, :, : ) ...
-                        , 2 ), 3 ), ...
-                        [ cm.dim.( X ), cm.len.( dX ) ] );
-                    
-                    res.dz.( dX ) = reshape( ...
-                        sum( sum( ...
-                        w_n_ .* cm.dm.( dX )( 2, :, b_n_, :, : ) ...
-                        , 2 ), 3 ), ...
-                        [ cm.dim.( X ), cm.len.( dX ) ] );
-                    
-                end
-                
-            end
-                        
         end
         
         %% Lorentz function
@@ -2049,115 +1564,7 @@ classdef CoMoTk < matlab.mixin.Copyable
             end
             
         end
-        
-        %% various checks for debugging purposes
-        
-        function b_is_ok = check_state ( cm, context )
-            % used for debugging purposes
-            
-            fprintf( 1, 'check_state: %s\n', context );
-            
-            b_is_ok = true;
-            
-            if ( cm.options.debug )
                 
-                if ( isempty( cm.log )  )
-                    
-                    cm.log.count = 1;
-                    
-                else
-                    
-                    cm.log.count = cm.log.count + 1;
-                    
-                end
-                
-                cm.log.context{ cm.log.count } = context;
-                
-                cm.log.d{ cm.log.count } = cm.d;
-                cm.log.n_conf{ cm.log.count } = cm.n_conf;
-                
-                cm.log.b_n{ cm.log.count } = cm.b_n;
-                cm.log.n{ cm.log.count } = cm.n;
-                
-                cm.log.b_lambda{ cm.log.count } = cm.b_lambda;
-                cm.log.lambda{ cm.log.count } = cm.lambda;
-                
-                cm.log.b_up_free{ cm.log.count } = cm.b_up_free;
-                cm.log.b_do_free{ cm.log.count } = cm.b_do_free;
-                
-                cm.log.idx_up{ cm.log.count } = cm.idx_up;
-                cm.log.idx_do{ cm.log.count } = cm.idx_do;
-                
-            end
-            
-            if ( cm.options.debug )
-                
-                b_up_occ = cm.b_n & ~cm.b_up_free & cm.b_lambda;
-                b_do_occ = cm.b_n & ~cm.b_do_free & cm.b_lambda;
-                
-                [ idx_up_occ, c_up ] = find( b_up_occ );
-                [ idx_do_occ, c_do ] = find( b_do_occ );
-                
-                if ( ( ~isempty( cm.idx_up( b_up_occ ) ) && min( cm.idx_up( b_up_occ ) ) == 0 ) || ...
-                        ( ~isempty( cm.idx_do( b_do_occ ) ) && min( cm.idx_do( b_do_occ ) ) == 0 ) )
-                    
-                    b_is_ok = false;
-                    return;
-                    
-                end
-                
-                idx_up_diff = cm.idx_do( sub2ind( [ cm.alloc_n, cm.alloc_d ], cm.idx_up( b_up_occ ), c_up ) ) - idx_up_occ;
-                b_ok = idx_up_diff == 0;
-                
-                if ( cm.options.debug )
-                    
-                    cm.log.idx_up_diff{ cm.log.count } = idx_up_diff;
-                    cm.log.b_idx_up_diff{ cm.log.count } = b_ok;
-                    
-                end
-                
-                if ( sum( b_ok ) ~= length( idx_up_diff ) )
-                    
-                    b_is_ok = false;
-                    
-                end
-                
-                idx_do_diff = cm.idx_up( sub2ind( [ cm.alloc_n, cm.alloc_d ], cm.idx_do( b_do_occ ), c_do ) ) - idx_do_occ;
-                b_ok = idx_do_diff == 0;
-                
-                if ( cm.options.debug )
-                    
-                    cm.log.idx_do_diff{ cm.log.count } = idx_do_diff;
-                    cm.log.b_idx_do_diff{ cm.log.count } = b_ok;
-                    
-                end
-                
-                if ( sum( b_ok ) ~= length( idx_do_diff ) )
-                    
-                    b_is_ok = false;
-                    
-                end
-                
-                n_diff = cm.n( sub2ind( [ cm.alloc_n, cm.alloc_d ], cm.idx_up( b_up_occ ), c_up ) ) - cm.n( b_up_occ );
-                b_ok = n_diff == 1;
-                
-                if ( cm.options.debug )
-                    
-                    cm.log.n_diff{ cm.log.count } = n_diff;
-                    cm.log.b_n_diff{ cm.log.count } = b_ok;
-                    
-                end
-                
-                if ( sum( b_ok ) ~= length( n_diff ) )
-                    
-                    b_is_ok = false;
-                    
-                end
-                
-            end
-            
-        end        
-        
     end
     
     methods ( Access = private )
@@ -2174,9 +1581,15 @@ classdef CoMoTk < matlab.mixin.Copyable
                 
             end
             
+            if ( cm.d_tau == 0 )
+                
+                error( 'd_tau must be positive.' );
+                
+            end                        
+            
             % check proton densities
             
-            if ( size( cm.mu, 2 ) ~= cm.n_tissues )
+            if ( size( cm.pd, 2 ) ~= cm.n_tissues )
                 
                 error( 'Proton density not set properly.' );
                 
@@ -2187,19 +1600,19 @@ classdef CoMoTk < matlab.mixin.Copyable
             
             if ( ~isempty( cm.k ) )
                
-                % cm.mu must lie in the null space of cm.k:
+                % cm.pd must lie in the null space of cm.k:
                 
-                k_mu = cm.k * cm.mu( : );
+                k_pd = cm.k * cm.pd( : );
                 
-                if ( max( abs( k_mu ) > 10 * eps ) )
+                if ( max( abs( k_pd ) > 10 * eps ) )
                     
                     % Maybe there is an error, maybe it is just numerical
                     % inaccuracy. Provide an informal message to the user and let
                     % the program continue.
                     
-                    fprintf( 1, 'Check, whether cm.mu lies in null space of cm.k\n' );
-                    fprintf( 1, 'Found result for cm.k * cm.mu =\n' );
-                    disp( k_mu );
+                    fprintf( 1, 'Check, whether cm.pd lies in null space of cm.k\n' );
+                    fprintf( 1, 'Found result for cm.k * cm.pd =\n' );
+                    disp( k_pd );
                     
                 end
                 
@@ -2222,1206 +1635,44 @@ classdef CoMoTk < matlab.mixin.Copyable
                 
             end
             
-            % take initial settings from options
+            % allocate space set initial values
             
-            cm.alloc_d = cm.options.alloc_d;
-            cm.alloc_n = cm.options.alloc_n;
-            cm.epsilon = cm.options.epsilon;
-            cm.rapid_meltdown = cm.options.rapid_meltdown;
-            cm.verbose = cm.options.verbose;
-            cm.debug = cm.options.debug;
+            cm.m = zeros( [ 3, cm.n_tissues, 2 .* cm.n_p + 1, 2 .* cm.n_tau + 1 ] );
             
-            % generate initial configuration vector (thermal equlibrium)
+            % thermal equilibrium:
+            cm.m( 2, :, cm.p0( 1 ), cm.p0( 2 ), cm.p0( 3 ), cm.tau0 ) = cm.pd;  
             
-            cm.m = zeros( 3, cm.n_tissues, cm.alloc_n );
-            cm.m( 2, :, cm.null_idx ) = cm.mu;
+            cm.b_occ = false( size( cm.m ) );
             
-            % allocate space
+            % only center of configuration space is occupied, initially:
+            cm.b_occ( :, :, cm.p0( 1 ), cm.p0( 2 ), cm.p0( 3 ), cm.tau0 ) = true;
             
-            cm.b_lambda = false( 1, cm.alloc_d );
-            cm.b_n = false( cm.alloc_n, 1 );
+            % accumulated gradient moments
             
-            cm.lambda = zeros( 1, cm.alloc_d );
-            cm.n = zeros( cm.alloc_n, cm.alloc_d );
+            p_max = cm.n_p( : ) .* cm.d_p( : );
             
-            cm.b_up_free = true( cm.alloc_n, cm.alloc_d );
-            cm.b_do_free = true( cm.alloc_n, cm.alloc_d );
-            
-            cm.idx_up = zeros( cm.alloc_n, cm.alloc_d );
-            cm.idx_do = zeros( cm.alloc_n, cm.alloc_d );
-            
-            cm.idx_up_new = zeros( cm.alloc_n, 1 );
-            cm.idx_do_new = zeros( cm.alloc_n, 1 );
-            
-            % pure relaxation
-            
-            cm.b_E = false( cm.alloc_d, 1 );
-            cm.E = zeros( 2, cm.n_tissues, cm.alloc_d );
+            for i = 1 : 3
 
-            % diffusion
-            
-            if ( cm.diffusion ~= CoMoTk.No_Diff )
+                cm.p{ i } = reshape( ...
+                    linspace( - p_max( i ), p_max( i ), 2 * cm.n_p( i ) + 1 ), ...
+                    [ ones( 1, 1 + i ), 2 * cm.n_p( i ) + 1 ] );
                 
-                cm.b_En = false( cm.alloc_n, cm.alloc_d );
-                cm.En = zeros( 3, cm.n_tissues, cm.alloc_n, cm.alloc_d );
-                cm.En_exp = zeros( 3, cm.n_tissues, cm.alloc_n, cm.alloc_d );
-                
-                if ( cm.diffusion == CoMoTk.Iso_Diff )
-                    
-                    cm.dim.D = 1;                    
-                    cm.dim.S = 1;                    
-                    
-                elseif ( cm.diffusion == CoMoTk.Tensor_Diff )
-                    
-                    cm.dim.D = 6;                    
-                    cm.dim.S = 6;                    
-                    
-                else
-                    
-                    error( 'This should not happen.' );
-                    
-                end
-
-                cm.s = zeros( 3, cm.alloc_d );
-                cm.S = zeros( cm.dim.S, cm.alloc_d );
-
             end
             
-            % only the zeroth configuration is occupied
+            % accumulated durations
             
-            cm.b_n( cm.null_idx ) = true;
-            cm.n_conf = 1;
-            
-            % initialize times and gradients
-            
-            cm.b_tau = false( cm.alloc_d, 1 );
-            cm.tau = zeros( cm.alloc_d, 1 );
-            
-            cm.b_p = false( cm.alloc_d, 1 );
-            cm.p = zeros( 3, cm.alloc_d );
-            
-            cm.b_tau_n = false( cm.alloc_n, 1 );
-            cm.tau_n = zeros( cm.alloc_n, 1 );
-
-            cm.b_p_n = false( cm.alloc_n, 1 );
-            cm.p_n = zeros( 3, cm.alloc_n );
-                        
+            tau_max = cm.n_tau * cm.d_tau;
+           
+            cm.tau = reshape( ...
+                linspace( - tau_max, tau_max, 2 * cm.n_tau + 1 ), ...
+                [ ones( 1, 5 ), 2 * cm.n_tau + 1 ] );
+                                               
             % everything is prepared now
             
             cm.b_prep = true;
             
         end        
-        
-        function update_tau_n ( cm )
-            % update cm.tau_n and cm.b_tau_n
-            
-            b_todo = cm.b_n & ~cm.b_tau_n;
-            
-            n_todo = sum( b_todo );
-            
-            if ( n_todo > 0 )
-                
-                cm.tau_n( b_todo ) = ...
-                    sum( cm.n( b_todo, cm.b_lambda ) .* reshape( cm.tau( cm.b_lambda ), [ 1, cm.d ] ), 2 );
-                
-                cm.b_tau_n = cm.b_n;
-                
-            end
-            
-        end
-        
-        function update_p_n ( cm )
-            % update cm.p_n
-            
-            b_todo = cm.b_n & ~cm.b_p_n;
-            
-            n_todo = sum( b_todo );
-            
-            if ( n_todo > 0 )
-                
-                cm.p_n( :, b_todo ) = sum( reshape( cm.n( b_todo, cm.b_lambda ), [ 1, n_todo, cm.d ] ) .* ...
-                    reshape( cm.p( :, cm.b_lambda ), [ 3, 1, cm.d ] ), 3 );
-                
-                cm.b_p_n = cm.b_n;
-                
-            end
-            
-        end
-        
-        function update_En_exp ( cm, b_todo, n_todo, idx_time )
-            % update relaxation matrices (in presence of diffusion)
-                                    
-            if ( cm.diffusion == CoMoTk.Iso_Diff )
-
-                tau_D = cm.tau( idx_time ) .* cm.D;
-                
-                pn2 = reshape( sum( cm.p_n( :, b_todo ) .* cm.p_n( :, b_todo ), 1 ), [ 1, 1, n_todo ] );
-                pns =  reshape( sum( cm.p_n( :, b_todo ) .* cm.s( :, idx_time ), 1 ), [ 1, 1, n_todo ] );
-
-                En_exp_tmp = zeros( 3, 1, n_todo );
-
-                En_exp_tmp( 1, 1, : ) = - ( pn2 + pns + cm.S( idx_time ) );
-                En_exp_tmp( 2, 1, : ) = - pn2;
-                En_exp_tmp( 3, 1, : ) = - ( pn2 - pns + cm.S( idx_time ) );
-                
-                % derivatives
-                
-                for i = 1 : cm.len.dD
-                    
-                    cm.dEn_exp_dD( :, 1, b_todo, 1, idx_time ) = ...
-                        cm.tau( idx_time ) .* En_exp_tmp( :, 1, : );
-                        
-                end                
-                
-                if ( cm.len.dtau > 0 )
-                    
-                    [ ~, i ] = find( cm.dtau == cm.lambda( idx_time ) );
-                    
-                    if ( ~isempty( i ) )
-                        
-                        cm.dEn_exp_dtau( :, :, b_todo, 1, i ) = cm.D .* En_exp_tmp( :, 1, : );
-                        
-                    end
-                    
-                end
-
-                for i = 1 : cm.len.dp
-                    
-                    [ ~, i_ ] = find( cm.dp( i ) == cm.lambda );
-                    
-                    if ( ~isempty( i_ ) )
-
-                        dpn2_dp = 2 .* ...
-                            reshape( cm.n( b_todo, i_ ), [ 1, 1, n_todo ] ) .* ...
-                            reshape( cm.p_n( :, b_todo )', [ 1, 1, n_todo, 3 ] );
-                        
-                        dpns_dp = ...
-                            reshape( cm.n( b_todo, i_ ), [ 1, 1, n_todo ] ) .* ...
-                            reshape( cm.s( :, idx_time ), [ 1, 1, 1, 3 ] );
-                        
-                        cm.dEn_exp_dp( 1, :, b_todo, :, i, idx_time ) = - tau_D .* ( dpn2_dp + dpns_dp );
-                        cm.dEn_exp_dp( 2, :, b_todo, :, i, idx_time ) = - tau_D .* dpn2_dp;
-                        cm.dEn_exp_dp( 3, :, b_todo, :, i, idx_time ) = - tau_D .* ( dpn2_dp - dpns_dp );
-                        
-                    end
-                    
-                end
-                
-                if( cm.len.ds > 0 )
-                    
-                    [ ~, i ] = find( cm.ds == cm.lambda( idx_time ) );
-                    
-                    if ( ~isempty( i ) )
-                        
-                        dpns_ds = reshape( cm.p_n( :, b_todo )', [ 1, 1, n_todo, 3 ] );
-                        
-                        cm.dEn_exp_ds( 1, :, b_todo, :, i ) = - tau_D .* dpns_ds;
-                        
-                    end
-                    
-                end
-                
-                if ( cm.len.dS > 0 )
-                    
-                    [ ~, i ] = find( cm.dS == cm.lambda( idx_time ) );
-                    
-                    if ( ~isempty( i ) )
-
-                        cm.dEn_exp_dS( 1, :, 1, 1, i ) = - tau_D;
-                        
-                    end
-                    
-                end
-                
-                % finalize exponent
-                
-                cm.En_exp( :, :, b_todo, idx_time ) = tau_D .* En_exp_tmp;
-                
-            elseif ( cm.diffusion == CoMoTk.Tensor_Diff )
-
-                pnDpn = reshape( sum( sum( ...
-                    reshape( cm.p_n( :, b_todo ), [ 3, 1, 1, n_todo ] ) .* ...
-                    cm.D .* ...
-                    reshape( cm.p_n( :, b_todo ), [ 1, 3, 1, n_todo ] ) ...
-                    , 1 ), 2 ), [ 1, cm.n_tissues, n_todo ] ); 
-
-                pnDs = reshape( sum( sum( ...
-                    reshape( cm.p_n( :, b_todo ), [ 3, 1, 1, n_todo ] ) .* ...
-                    cm.D .* ...
-                    reshape( cm.s( :, idx_time ), [ 1, 3 ] ) ...
-                    , 1 ), 2 ), [ 1, cm.n_tissues, n_todo ] );
-                
-                DS = reshape( sum( cm.D_vec .* cm.S( :, idx_time ), 1 ), [ 1, cm.n_tissues ] );
-
-                cm.En_exp( 1, :, b_todo, idx_time ) = - ( pnDpn + pnDs + DS );
-                cm.En_exp( 2, :, b_todo, idx_time ) = - pnDpn;
-                cm.En_exp( 3, :, b_todo, idx_time ) = - ( pnDpn - pnDs + DS );
-                
-                % derivatives
-
-                if ( cm.len.dD > 0 )
-                    
-                    dpnDpn_dD = zeros( 1, 1, n_todo, 6 );
-                    
-                    dpnDpn_dD( 1, 1, :, CoMoTk.Tensor_idx.xx ) = cm.p_n( 1, b_todo ) .* cm.p_n( 1, b_todo );
-                    dpnDpn_dD( 1, 1, :, CoMoTk.Tensor_idx.yy ) = cm.p_n( 2, b_todo ) .* cm.p_n( 2, b_todo );
-                    dpnDpn_dD( 1, 1, :, CoMoTk.Tensor_idx.zz ) = cm.p_n( 3, b_todo ) .* cm.p_n( 3, b_todo );
-                    dpnDpn_dD( 1, 1, :, CoMoTk.Tensor_idx.xy ) = 2 .* cm.p_n( 1, b_todo ) .* cm.p_n( 2, b_todo );
-                    dpnDpn_dD( 1, 1, :, CoMoTk.Tensor_idx.xz ) = 2 .* cm.p_n( 1, b_todo ) .* cm.p_n( 3, b_todo );
-                    dpnDpn_dD( 1, 1, :, CoMoTk.Tensor_idx.yz ) = 2 .* cm.p_n( 2, b_todo ) .* cm.p_n( 3, b_todo );
-
-                    dpnDs_dD = zeros( 1, 1, n_todo, 6 );
-                    
-                    dpnDs_dD( 1, 1, :, CoMoTk.Tensor_idx.xx ) = cm.p_n( 1, b_todo ) .* cm.s( 1, idx_time );
-                    dpnDs_dD( 1, 1, :, CoMoTk.Tensor_idx.yy ) = cm.p_n( 2, b_todo ) .* cm.s( 2, idx_time );
-                    dpnDs_dD( 1, 1, :, CoMoTk.Tensor_idx.zz ) = cm.p_n( 3, b_todo ) .* cm.s( 3, idx_time );
-                    dpnDs_dD( 1, 1, :, CoMoTk.Tensor_idx.xy ) = ...
-                        cm.p_n( 1, b_todo ) .* cm.s( 2, idx_time ) + cm.p_n( 2, b_todo ) .* cm.s( 1, idx_time );
-                    dpnDs_dD( 1, 1, :, CoMoTk.Tensor_idx.xz ) = ...
-                        cm.p_n( 1, b_todo ) .* cm.s( 3, idx_time ) + cm.p_n( 3, b_todo ) .* cm.s( 1, idx_time );
-                    dpnDs_dD( 1, 1, :, CoMoTk.Tensor_idx.yz ) = ...
-                        cm.p_n( 2, b_todo ) .* cm.s( 3, idx_time ) + cm.p_n( 3, b_todo ) .* cm.s( 2, idx_time );
-
-                    dDS_dD = zeros( 1, 1, 1, 6 );
-                    
-                    dDS_dD( 1, 1, 1, 1 : 3 ) = cm.S( 1 : 3, idx_time );
-                    dDS_dD( 1, 1, 1, 4 : 6 ) = 2 .* cm.S( 4 : 6, idx_time );
-                    
-                    cm.dEn_exp_dD( 1, 1, b_todo, :, idx_time ) = ...
-                        - cm.tau( idx_time ) .* ( dpnDpn_dD + dpnDs_dD + dDS_dD );
-                    cm.dEn_exp_dD( 2, 1, b_todo, :, idx_time ) = ...
-                        - cm.tau( idx_time ) .* dpnDpn_dD;
-                    cm.dEn_exp_dD( 3, 1, b_todo, :, idx_time ) = ...
-                        - cm.tau( idx_time ) .* ( dpnDpn_dD - dpnDs_dD + dDS_dD );
-                    
-                end
-                
-                if ( cm.len.dtau > 0 )
-                    
-                    [ ~, i ] = find( cm.dtau == cm.lambda( idx_time ) );
-                    
-                    if ( ~isempty( i ) )
-                        
-                        cm.dEn_exp_dtau( :, :, b_todo, 1, i ) = cm.En_exp( :, :, b_todo, idx_time );
-                        
-                    end
-                    
-                end
-
-                for i = 1 : cm.len.dp
-                    
-                    [ ~, i_ ] = find( cm.dp( i ) == cm.lambda );
-                    
-                    if ( ~isempty( i_ ) )
-                        
-                        dpnDpn_dp = 2 .* reshape( cm.n( b_todo, i_ ), [ 1, 1, n_todo ] ) .* ...
-                            reshape( reshape( ...
-                            sum( cm.D .* reshape( cm.p_n( :, b_todo ), [ 1, 3, 1, n_todo ] ), 2 ), ...
-                            [ 3, cm.n_tissues * n_todo ] )', [ 1, cm.n_tissues, n_todo, 3 ] );
-                        
-                        dpnDs_dp = reshape( cm.n( b_todo, i_ ), [ 1, 1, n_todo ] ) .* ...
-                            reshape( reshape( ...
-                            sum( cm.D .* reshape( cm.s( :, idx_time ), [ 1, 3 ] ), 2 ), ...
-                            [ 3, cm.n_tissues ] )', [ 1, cm.n_tissues, 1, 3 ] );
-                                                
-                        cm.dEn_exp_dp( 1, :, b_todo, :, i, idx_time ) = - cm.tau( idx_time ) .* ( dpnDpn_dp + dpnDs_dp );
-                        cm.dEn_exp_dp( 2, :, b_todo, :, i, idx_time ) = - cm.tau( idx_time ) .* dpnDpn_dp;
-                        cm.dEn_exp_dp( 3, :, b_todo, :, i, idx_time ) = - cm.tau( idx_time ) .* ( dpnDpn_dp - dpnDs_dp );
-                        
-                    end
-                    
-                end                
-
-                if( cm.len.ds > 0 )
-                    
-                    [ ~, i ] = find( cm.ds == cm.lambda( idx_time ) );
-                    
-                    if ( ~isempty( i ) )
-                        
-                        dpnDs_ds = ...
-                            reshape( reshape( ...
-                            sum( cm.D .* reshape( cm.p_n( :, b_todo ), [ 1, 3, 1, n_todo ] ), 2 ), ...
-                            [ 3, cm.n_tissues * n_todo ] )', [ 1, cm.n_tissues, n_todo, 3 ] );
-                                                
-                        cm.dEn_exp_ds( 1, :, b_todo, :, i ) = - cm.tau( idx_time ) .* dpnDs_ds;
-                        
-                    end
-                    
-                end
-
-                if ( cm.len.dS > 0 )
-                    
-                    [ ~, i ] = find( cm.dS == cm.lambda( idx_time ) );
-                    
-                    if ( ~isempty( i ) )
-
-                        cm.dEn_exp_dS( 1, :, 1, :, i ) = - cm.tau( idx_time ) .* ...
-                            reshape( cm.D_vec', [ 1, cm.n_tissues, 1, 6 ] );
-                        
-                    end
-                    
-                end
-                                
-                % finalize exponent
-                
-                cm.En_exp( :, :, b_todo, idx_time ) = cm.tau( idx_time ) .* cm.En_exp( :, :, b_todo, idx_time );
-                                                
-            else
-                
-                error( 'Unexpected value for ''cm.diffusion''.' );
-                
-            end
-                        
-        end
-        
-        function update_relaxation ( cm, idx_time )
-            % update relaxation (without and with diffusion)
-            
-            % transverse and longitudinal relaxation
-            
-            if ( ~cm.b_E( idx_time ) )
-                
-                % first call: initialize relaxation
-                
-                cm.E( 1, :, idx_time ) = exp( - cm.R1 .* cm.tau( idx_time ) );
-                cm.E( 2, :, idx_time ) = exp( - cm.R2 .* cm.tau( idx_time ) );
-                
-                % mark as set
-                
-                cm.b_E( idx_time ) = true;
-                
-            end
-            
-            % diffusion damping
-            
-            if ( cm.diffusion ~= CoMoTk.No_Diff )
-                
-                % identify configurations that require updating
-                
-                b_todo = cm.b_n & ~cm.b_En( :, idx_time );
-                
-                n_todo = sum( b_todo );
-                
-                if ( n_todo > 0 )
-
-                    % calculate the exponent for diffusion damping (isotropic and tensor)
-                    % and all required derivatives
-                    
-                    cm.update_En_exp( b_todo, n_todo, idx_time );
-                
-                    % update diffusion damping factors
-                    
-                    cm.En( :, :, b_todo, idx_time ) = ...
-                        cm.E( [ 2, 1, 2 ], :, idx_time ) .* exp( cm.En_exp( :, :, b_todo, idx_time ) );
-                                        
-                    % we are done
-                    
-                    cm.b_En( b_todo, idx_time ) = true;
-                    
-                end
-                                
-            end
-            
-        end
-        
-        function [ idx_time, b_n_new, b_up_free_time, b_do_free_time ] = pre_time ( cm, lambda )
-            % preparations before executing a time interval
-            
-            if ( cm.options.verbose )
-                
-                fprintf( 1, 'pre_time: d = %d\n', cm.d );
-                fprintf( 1, 'pre_time: n_conf = %d\n', cm.n_conf );
-                
-            end
-            
-            % is this a new time interval?
-            
-            b_time = cm.b_lambda & ( cm.lambda == lambda );
-            idx_time = find( b_time, 1, 'first' );
-            
-            if ( isempty( idx_time ) ) % new time index
-                
-                if ( cm.alloc_d == cm.d ) % need to allocate more space first
-                    
-                    cm.alloc_d = cm.alloc_d + cm.options.alloc_d;
-                    
-                    [ ~, rng_d ] = cm.reallocate_nd;
-                    
-                    % extend b_time
-                    
-                    b_time( rng_d ) = false;
-                    
-                end
-                
-                % get the first free place
-                
-                idx_time = find( ~cm.b_lambda, 1, 'first' );
-                
-                % update logical indices amd set identifier
-                
-                b_time( idx_time ) = true;
-                cm.b_lambda( idx_time ) = true;
-                cm.lambda( idx_time ) = lambda;
-                
-                % configuration order increases by one
-                
-                cm.d = cm.d + 1;
-                
-                % prior to the time interval, only the zero order configuration is present
-                % and both direct neighbours are targets to be occupied
-                
-                cm.b_up_free( cm.b_n, idx_time ) = true;
-                cm.b_do_free( cm.b_n, idx_time ) = true;
-                
-            end
-            
-            % associated with current time interval
-            
-            b_up_free_time = cm.b_n & cm.b_up_free( :, idx_time );
-            b_do_free_time = cm.b_n & cm.b_do_free( :, idx_time );
-            
-            % how many new states will be created in each direction?
-            
-            num_up_new = sum( b_up_free_time );
-            num_do_new = sum( b_do_free_time );
-            num_new = num_up_new + num_do_new;
-            
-            % determine free space
-            
-            num_free = sum( ~cm.b_n );
-            
-            % do we need to allocate more space?
-            
-            if ( num_free < num_new )
-                
-                cm.alloc_n = cm.alloc_n + max( num_new - num_free, cm.options.alloc_n );
-                
-                [ rng_n, ~ ] = cm.reallocate_nd;
-                
-                % extend b_up_free_time and b_do_free_time
-                
-                b_up_free_time( rng_n ) = false;
-                b_do_free_time( rng_n ) = false;
-                
-            end
-            
-            % indices of states which are transferred into previously
-            % unoccupied configuration orders
-            
-            idx_up_old = find( b_up_free_time );
-            idx_do_old = find( b_do_free_time );
-            
-            % corresponding (with respect to order) new indices
-            % note that available gaps are filled first
-            
-            idx_free = find( ~cm.b_n, num_new );
-            
-            cm.idx_up_new( b_up_free_time ) = idx_free( 1 : num_up_new );
-            cm.idx_do_new( b_do_free_time ) = idx_free( num_up_new + 1 : end );
-            
-            %% bookkeeping for lambda == handle_time
-            
-            % the extremal configurations have new successors
-            
-            cm.idx_up( b_up_free_time, idx_time ) = cm.idx_up_new( b_up_free_time );
-            cm.idx_do( b_do_free_time, idx_time ) = cm.idx_do_new( b_do_free_time );
-            
-            % same applies (in opposite direction) to the newly created states
-            % note that these indices will not be used yet in the current time interval
-            
-            cm.idx_up( cm.idx_do_new( b_do_free_time ), idx_time ) = idx_do_old;
-            cm.idx_do( cm.idx_up_new( b_up_free_time ), idx_time ) = idx_up_old;
-            
-            % configuration order of handle_time changes
-            
-            cm.n( cm.idx_up_new( b_up_free_time ), idx_time ) = cm.n( b_up_free_time, idx_time ) + 1;
-            cm.n( cm.idx_do_new( b_do_free_time ), idx_time ) = cm.n( b_do_free_time, idx_time ) - 1;
-            
-            %% bookkeeping for lambda ~= handle_time
-            
-            % associated logical and actual indices
-            
-            sz_nd = [ cm.alloc_n, cm.alloc_d ];
-            
-            b_other_lambda = cm.b_lambda & ~b_time;
-            
-            b_up_up_o = b_up_free_time & ~cm.b_up_free & b_other_lambda;
-            b_up_do_o = b_up_free_time & ~cm.b_do_free & b_other_lambda;
-            b_do_up_o = b_do_free_time & ~cm.b_up_free & b_other_lambda;
-            b_do_do_o = b_do_free_time & ~cm.b_do_free & b_other_lambda;
-            
-            b_up_up_f = b_up_free_time & cm.b_up_free & b_other_lambda;
-            b_up_do_f = b_up_free_time & cm.b_do_free & b_other_lambda;
-            b_do_up_f = b_do_free_time & cm.b_up_free & b_other_lambda;
-            b_do_do_f = b_do_free_time & cm.b_do_free & b_other_lambda;
-            
-            [ r, c ] = find( b_up_up_o );
-            
-            if ( ~isempty( r ) )
-                
-                ind_up = sub2ind( sz_nd, cm.idx_up_new( r ), c ) ;
-                idx_up_other = cm.idx_up( cm.idx_up( b_up_up_o ), idx_time );
-                ind_up_other = sub2ind( sz_nd, idx_up_other, c ) ;
-                
-                cm.idx_up( ind_up ) = idx_up_other;
-                cm.idx_do( ind_up_other ) = cm.idx_up_new( r );
-                
-                cm.b_up_free( ind_up ) = false;
-                cm.b_do_free( ind_up_other ) = false;
-                
-            end
-            
-            [ r, c ] = find( b_up_do_o );
-            
-            if ( ~isempty( r ) )
-                
-                ind_up = sub2ind( sz_nd, cm.idx_up_new( r ), c ) ;
-                idx_up_other = cm.idx_up( cm.idx_do( b_up_do_o ), idx_time );
-                ind_up_other = sub2ind( sz_nd, idx_up_other, c ) ;
-                
-                cm.idx_do( ind_up ) = idx_up_other;
-                cm.idx_up( ind_up_other ) = cm.idx_up_new( r );
-                
-                cm.b_do_free( ind_up ) = false;
-                cm.b_up_free( ind_up_other ) = false;                
-                
-            end
-            
-            [ r, c ] = find( b_do_up_o );
-            
-            if ( ~isempty( r ) )
-                
-                ind_do = sub2ind( sz_nd, cm.idx_do_new( r ), c ) ;
-                idx_do_other = cm.idx_do( cm.idx_up( b_do_up_o ), idx_time );
-                ind_do_other = sub2ind( sz_nd, idx_do_other, c ) ;
-                
-                cm.idx_up( ind_do ) = idx_do_other;
-                cm.idx_do( ind_do_other ) = cm.idx_do_new( r );
-                
-                cm.b_up_free( ind_do ) = false;
-                cm.b_do_free( ind_do_other ) = false;                
-
-            end
-            
-            [ r, c ] = find( b_do_do_o );
-            
-            if ( ~isempty( r ) )
-                                
-                ind_do = sub2ind( sz_nd, cm.idx_do_new( r ), c ) ;
-                idx_do_other = cm.idx_do( cm.idx_do( b_do_do_o ), idx_time );
-                ind_do_other = sub2ind( sz_nd, idx_do_other, c ) ;
-                
-                cm.idx_do( ind_do ) = idx_do_other;
-                cm.idx_up( ind_do_other ) = cm.idx_do_new( r );
-                
-                cm.b_do_free( ind_do ) = false;
-                cm.b_up_free( ind_do_other ) = false;
-                
-            end
-            
-            [ r, c ] = find( b_up_up_f );
-            
-            if ( ~isempty( r ) )
-                
-                cm.b_up_free( sub2ind( sz_nd, cm.idx_up_new( r ), c ) ) = true;
-                
-            end
-            
-            [ r, c ] = find( b_up_do_f );
-            
-            if ( ~isempty( r ) )
-                                
-                cm.b_do_free( sub2ind( sz_nd, cm.idx_up_new( r ), c ) ) = true;
-                
-            end
-            
-            [ r, c ] = find( b_do_up_f );
-            
-            if ( ~isempty( r ) )
-                
-                cm.b_up_free( sub2ind( sz_nd, cm.idx_do_new( r ), c ) ) = true;
-                
-            end
-            
-            [ r, c ] = find( b_do_do_f );
-            
-            if ( ~isempty( r ) )
-                
-                cm.b_do_free( sub2ind( sz_nd, cm.idx_do_new( r ), c ) ) = true;
-                
-            end
-            
-            % configuration order remains unchanged
-            
-            cm.n( cm.idx_up_new( b_up_free_time ), b_other_lambda ) = cm.n( b_up_free_time, b_other_lambda );
-            cm.n( cm.idx_do_new( b_do_free_time ), b_other_lambda ) = cm.n( b_do_free_time, b_other_lambda );
-            
-            %% logical indices of new states
-            
-            cm.b_up_free( cm.idx_up_new( b_up_free_time ), idx_time ) = true;
-            cm.b_do_free( cm.idx_up_new( b_up_free_time ), idx_time ) = false;
-            
-            cm.b_do_free( cm.idx_do_new( b_do_free_time ), idx_time ) = true;
-            cm.b_up_free( cm.idx_do_new( b_do_free_time ), idx_time ) = false;
-            
-            %% now we can update this as well
-            
-            cm.b_up_free( b_up_free_time, idx_time ) = false;
-            cm.b_do_free( b_do_free_time, idx_time ) = false;
-            
-            %% prepare to update the new occupation
-            
-            b_n_new = cm.b_n;
-            b_n_new( cm.idx_up_new( b_up_free_time ) ) = true;
-            b_n_new( cm.idx_do_new( b_do_free_time ) ) = true;
-            
-        end
-        
-        function post_time ( cm, b_n_new )
-            % several parameter updates after time interval
-            
-            cm.b_n = b_n_new;
-            cm.n_conf = sum( cm.b_n );
-            
-            if ( cm.options.verbose )
-                
-                fprintf( 1, 'post_time: d = %d\n', cm.d );
-                fprintf( 1, 'post_time: n_conf = %d\n', cm.n_conf );
-                
-            end
-            
-        end
-                
-        function b_is_ok = meltdown ( cm )
-            % remove negligible configurations
-            
-            b_is_ok = true;
-            
-            % no removal of configurations for cm.epsilon == 0
-            
-            if ( cm.epsilon == 0 )
-                
-                return;
-                
-            end
-            
-            % calculate size of configuration vectors
-            
-            abs_m_2 = zeros( cm.alloc_n, 1 );
-            abs_m_2( cm.b_n ) = real( sum( reshape( real( cm.m( :, :, cm.b_n ) .* conj( cm.m( :, :, cm.b_n ) ) ), [ 3 * cm.n_tissues, cm.n_conf ] ), 1 ) ).';
-            b_small = abs_m_2 < cm.epsilon^2;
-
-            % needed a lot below
-            
-            sz_nd = [ cm.alloc_n, cm.alloc_d ];
-            
-            % we do not want to remove these (to be updated later)
-            
-            b_exclude_n = ~cm.b_n;
-            b_exclude_n( cm.null_idx ) = true;
-            
-            n_candidates_tot = 0;
-            n_removed_tot = 0;
-            n_cycles = 0;
-            
-            % removal may require several iterations (from the boundary inwards)
-            
-            while( true )
-                
-                %% candidates for removal:
-                % (a) occupied
-                % (b) not explicitly excluded
-                % (c) small
-                % (d) have an unoccupied neighbor in every direction
-                
-                b_remove_n = ...
-                    cm.b_n & ...             % (a)
-                    ~b_exclude_n & ...       % (b)
-                    b_small & ...            % (c)
-                    ( sum( cm.b_up_free( :, cm.b_lambda ) | cm.b_do_free( :, cm.b_lambda ), 2 ) == cm.d );  % (d)
-                
-                n_remove = sum( b_remove_n );
-                
-                n_candidates_tot = n_candidates_tot + n_remove;
-                
-                if ( n_remove == 0 )
-                    
-                    break;  % nothing more to to
-                    
-                end
-                                
-                n_removed = 0;
-                
-                if ( cm.rapid_meltdown ) % looking at the candidates at once (requires more memory)
-                
-                    % first we have to check that no occupation patterns like
-                    %          ---------
-                    %          | 1 | 0 |
-                    %          ---------
-                    %          | 0 | 1 |
-                    %          ---------
-                    % arise after removal of the configurations
-
-                    idx_n = find( b_remove_n );
-                    idx_lambda = find( cm.b_lambda );
-
-                    b_up_occ = ~cm.b_up_free( b_remove_n, cm.b_lambda );
-                    b_do_occ = ~cm.b_do_free( b_remove_n, cm.b_lambda );
-
-                    idx_up_occ = cm.idx_up( b_remove_n, cm.b_lambda );
-                    idx_do_occ = cm.idx_do( b_remove_n, cm.b_lambda );
-
-                    % up up
-
-                    lambda_pairs = ...
-                        reshape( idx_lambda, [ 1, cm.d ] ) > reshape( idx_lambda, [ 1, 1, cm.d ] );
-                    
-                    [ r_up_up, c_up_up ] = ...
-                        find( reshape( ...
-                            b_up_occ & reshape( b_up_occ, [ n_remove, 1, cm.d ] ) & lambda_pairs, ...
-                            [ n_remove, cm.d * cm.d ] ) );
-
-                    [ i_up, j_up ] = ind2sub( [ cm.d, cm.d ], c_up_up );
-
-                    n_ = length( i_up );
-                    sz_n_ = [ n_, 1 ];
-                    
-                    if ( n_ > 0 )
-                        
-                        b_free = cm.b_up_free( ...
-                            sub2ind( sz_nd, ...
-                            reshape( idx_up_occ( ...
-                            sub2ind( [ n_remove, cm.d ], ...
-                            r_up_up( : ), ...
-                            i_up( : ) ) ), sz_n_ ), ...
-                            reshape( idx_lambda( j_up ), sz_n_ ) ) );
-                        
-                        b_exclude_n( idx_n( r_up_up( b_free ) ) ) = true;
-                        
-                        sz_n_ = [ sum( ~b_free ), 1 ];
-                        
-                        b_exclude_n( cm.idx_up( ...
-                            sub2ind( sz_nd, ...
-                            reshape( idx_up_occ ( ...
-                            sub2ind( [ n_remove, cm.d ], ...
-                            r_up_up( ~b_free), ...
-                            i_up( ~b_free ) ) ), sz_n_ ), ...
-                            reshape( idx_lambda( j_up( ~b_free ) ), sz_n_ ) ) ) ) = true;
-                        
-                    end
-                    
-                    % do do
-                    
-                    [ r_do_do, c_do_do ] = ...
-                        find( reshape( ...
-                            b_do_occ & reshape( b_do_occ, [ n_remove, 1, cm.d ] ) & lambda_pairs, ...
-                            [ n_remove, cm.d * cm.d ] ) );
-
-                    [ i_do, j_do ] = ind2sub( [ cm.d, cm.d ], c_do_do );
-
-                    n_ = length( i_do );
-                    sz_n_ = [ n_, 1 ];
-
-                    if ( n_ > 0 )
-                        
-                        b_free = cm.b_do_free( ...
-                            sub2ind( sz_nd, ...
-                            reshape( idx_do_occ( ...
-                            sub2ind( [ n_remove, cm.d ], ...
-                            r_do_do( : ), ...
-                            i_do( : ) ) ), sz_n_ ) , ...
-                            reshape( idx_lambda( j_do ), sz_n_ )  ) );
-                        
-                        b_exclude_n( idx_n( r_do_do( b_free ) ) ) = true;
-
-                        sz_n_ = [ sum( ~b_free ), 1 ];
-                                                
-                        b_exclude_n( cm.idx_do( ...
-                            sub2ind( sz_nd, ...
-                            reshape( idx_do_occ ( ...
-                            sub2ind( [ n_remove, cm.d ], ...
-                            r_do_do( ~b_free), ...
-                            i_do( ~b_free ) ) ), sz_n_ ) , ...
-                            reshape( idx_lambda( j_do( ~b_free ) ), sz_n_ ) ) ) ) = true;
-                        
-                    end
-                             
-                    % up do
-                    
-                    lambda_pairs = ...
-                        reshape( idx_lambda, [ 1, cm.d ] ) ~= reshape( idx_lambda, [ 1, 1, cm.d ] );
-                    
-                    [ r_up_do, c_up_do ] = ...
-                        find( reshape( ...
-                            b_up_occ & reshape( b_do_occ, [ n_remove, 1, cm.d ] ) & lambda_pairs, ...
-                            [ n_remove, cm.d * cm.d ] ) );
-
-                    [ i_up, j_do ] = ind2sub( [ cm.d, cm.d ], c_up_do );
-
-                    n_ = length( i_up );
-                    sz_n_ = [ n_, 1 ];
-                                        
-                    if ( n_ > 0 )
-                        
-                        b_free = cm.b_do_free( ...
-                            sub2ind( sz_nd, ...
-                            reshape( idx_up_occ( ...
-                            sub2ind( [ n_remove, cm.d ], ...
-                            r_up_do( : ), ...
-                            i_up( : ) ) ), sz_n_ ), ...
-                            reshape( idx_lambda( j_do ), sz_n_ )  ) );
-                        
-                        b_exclude_n( idx_n( r_up_do( b_free ) ) ) = true;
-                        
-                        sz_n_ = [ sum( ~b_free ), 1 ];
-                        
-                        b_exclude_n( cm.idx_do( ...
-                            sub2ind( sz_nd, ...
-                            reshape( idx_up_occ ( ...
-                            sub2ind( [ n_remove, cm.d ], ...
-                            r_up_do( ~b_free), ...
-                            i_up( ~b_free ) ) ), sz_n_ ) , ...
-                            reshape( idx_lambda( j_do( ~b_free ) ), sz_n_ ) ) ) ) = true;
-                        
-                    end
-                    
-                    % update configurations to be removed
-                    
-                    b_remove_n( b_exclude_n ) = false;
-                    n_removed = sum( b_remove_n );
-                    
-                    % now we may remove the configurations
-                    
-                    cm.b_n( b_remove_n ) = false;
-                    cm.n_conf = cm.n_conf - n_removed;
-                    
-                    % disconnect adjacent configurations
-                    
-                    b_up_occ = b_remove_n & cm.b_lambda & ~cm.b_up_free;
-                    b_do_occ = b_remove_n & cm.b_lambda & ~cm.b_do_free;
-                    
-                    [ r_up_occ, c_up_occ ] = find( b_up_occ );
-                    [ r_do_occ, c_do_occ ] = find( b_do_occ );
-                    
-                    idx_up_occ = cm.idx_up( b_up_occ );
-                    idx_do_occ = cm.idx_do( b_do_occ );
-                    
-                    cm.b_up_free( sub2ind( sz_nd, idx_do_occ, c_do_occ ) ) = true;
-                    cm.b_do_free( sub2ind( sz_nd, idx_up_occ, c_up_occ ) ) = true;
-                    cm.b_up_free( sub2ind( sz_nd, r_up_occ, c_up_occ ) ) = true;
-                    cm.b_do_free( sub2ind( sz_nd, r_do_occ, c_do_occ ) ) = true;
-                    
-                    cm.b_tau_n( b_remove_n ) = false;
-                    cm.b_p_n( b_remove_n ) = false;
-
-                    if ( cm.diffusion ~= CoMoTk.No_Diff )
-                        
-                        cm.b_En( b_remove_n, cm.b_lambda ) = false;
-                        
-                    end
-
-                else % look at the candidates individually
-                    
-                    r = find( b_remove_n );
-                
-                    for i = 1 : n_remove
-                        
-                        % first we have to check that no occupation patterns like
-                        %          ---------
-                        %          | 1 | 0 |
-                        %          ---------
-                        %          | 0 | 1 |
-                        %          ---------
-                        % arise after removal of the actual configuration r( i )
-                        
-                        b_up_occ = cm.b_lambda & ~cm.b_up_free( r( i ), : );
-                        b_do_occ = cm.b_lambda & ~cm.b_do_free( r( i ), : );
-                        
-                        c_up_occ = find( b_up_occ );
-                        c_do_occ = find( b_do_occ );
-                        
-                        n_up_occ = length( c_up_occ );
-                        n_do_occ = length( c_do_occ );
-                        
-                        idx_up_occ = cm.idx_up( r( i ), c_up_occ )';
-                        idx_do_occ = cm.idx_do( r( i ), c_do_occ )';
-                        
-                        c_up_occ = c_up_occ( : );
-                        c_do_occ = c_do_occ( : );
-                        
-                        [ r_, c_ ] = find( ( 1 : n_up_occ ) > ( 1 : n_up_occ)' );
-                        
-                        if ( any( cm.b_up_free( sub2ind( sz_nd, idx_up_occ( r_( : ) ), c_up_occ( c_( : ) ) ) ) ) )
-                            
-                            b_exclude_n( r( i ) ) = true;
-                            continue;
-                            
-                        end
-                        
-                        [ r_, c_ ] = find( true( n_up_occ, n_do_occ ) );
-                        
-                        if ( any( cm.b_up_free( sub2ind( sz_nd, idx_do_occ( c_( : ) ), c_up_occ( r_( : ) ) ) ) ) )
-                            
-                            b_exclude_n( r( i ) ) = true;
-                            continue;
-                            
-                        end
-                        
-                        [ r_, c_ ] = find( ( 1 : n_do_occ ) > ( 1 : n_do_occ)' );
-                        
-                        if ( any( cm.b_do_free( sub2ind( sz_nd, idx_do_occ( r_ ), c_do_occ( c_ ) ) ) ) )
-                            
-                            b_exclude_n( r( i ) ) = true;
-                            continue;
-                            
-                        end
-                        
-                        % now we may remove the configuration r( i )
-                        
-                        n_removed = n_removed + 1;
-                        
-                        cm.b_n( r( i ) ) = false;
-                        cm.n_conf = cm.n_conf - 1;
-                        
-                        % disconnect with adjacent configurations
-                        
-                        cm.b_up_free( sub2ind( sz_nd, idx_do_occ, c_do_occ ) ) = true;
-                        cm.b_do_free( sub2ind( sz_nd, idx_up_occ, c_up_occ ) ) = true;
-                        cm.b_up_free( r( i ), cm.b_lambda ) = true;
-                        cm.b_do_free( r( i ), cm.b_lambda ) = true;
-                        
-                        cm.b_tau_n( r( i ) ) = false;
-                        cm.b_p_n( r( i ) ) = false;
-                        
-                        if ( cm.diffusion ~= CoMoTk.No_Diff )
-                        
-                            cm.b_En( r( i ), cm.b_lambda ) = false;
-                            
-                        end
-                                             
-                    end
-                    
-                end
-                
-                % dimensions without nonzero configurations are in fact
-                % nonexistent and can be removed
-                
-                b_remove_lambda = cm.b_lambda & ~any( cm.n( cm.b_n, : ) ~= 0 );
-                
-                if ( any( b_remove_lambda ) )
-                    
-                    if ( cm.options.verbose )
-                        
-                        fprintf( 1, 'meltdown: Remove %d dimensions.\n', sum( b_remove_lambda ) );
-                        
-                    end
-                    
-                    cm.b_lambda( b_remove_lambda ) = false;
-                    cm.d = sum( cm.b_lambda );
-                    
-                    cm.b_up_free( :, b_remove_lambda ) = true;
-                    cm.b_do_free( :, b_remove_lambda ) = true;
-                    
-                    cm.b_tau( b_remove_lambda ) = false;
-                    cm.b_p( b_remove_lambda ) = false;
-                    
-                    cm.b_E( b_remove_lambda ) = false;
-                    
-                    if ( cm.diffusion ~= CoMoTk.No_Diff )
-                        
-                        cm.b_En( :, b_remove_lambda ) = false;
-                        
-                    end
-                    
-                end                
-                
-                n_cycles = n_cycles + 1;
-                n_removed_tot = n_removed_tot + n_removed;
-                
-            end
-                        
-            if ( cm.options.verbose )
-                    
-                fprintf( 1, 'meltdown: removed %s of %s candidates in %s cycles.\n', num2str( n_removed_tot ), num2str( n_candidates_tot ), num2str( n_cycles ) );
-                    
-            end
-                
-        end
-        
-        function [ rng_n, rng_d ] = reallocate_nd ( cm )
-            % reallocate new space, if necessary
-            
-            [ alloc_n_old, alloc_d_old ] = size( cm.n );
-            
-            if ( cm.options.debug )
-                
-                fprintf( 1, 'reallocate_nd: (before) alloc_n = %d\n', alloc_n_old );
-                fprintf( 1, 'reallocate_nd: (before) alloc_d = %d\n', alloc_d_old );
-                
-            end
-            
-            rng_n = alloc_n_old + 1 : cm.alloc_n;
-            rng_d = alloc_d_old + 1 : cm.alloc_d;
-            
-            if ( isempty( rng_n ) && isempty( rng_d ) )
-                
-                error( 'No reason to reallocate.' );
-                
-            end
-            
-            if ( ~isempty( rng_n ) )
-                
-                cm.b_n( rng_n ) = false;
-                cm.n( rng_n, : ) = 0;
-                
-                cm.m( :, :, rng_n ) = 0;
-                
-                cm.b_up_free( rng_n, : ) = true;
-                cm.b_do_free( rng_n, : ) = true;
-                
-                cm.idx_up( rng_n, : ) = 0;
-                cm.idx_do( rng_n, : ) = 0;
-                
-                cm.idx_up_new( rng_n ) = 0;
-                cm.idx_do_new( rng_n ) = 0;
-                
-                if ( cm.diffusion ~= CoMoTk.No_Diff )
-                    
-                    cm.b_En( rng_n, : ) = false;
-                    cm.En( :, :, rng_n, : ) = 0;
-                    cm.En_exp( :, :, rng_n, : ) = 0;
-                    
-                end
-                
-                cm.b_tau_n( rng_n ) = false;
-                cm.tau_n( rng_n ) = 0;
-                
-                cm.b_p_n( rng_n ) = false;
-                cm.p_n( :, rng_n ) = 0;
-                
-                if ( cm.len.dR1 > 0 )
-                    
-                    cm.dm.dR1( :, :, rng_n, 1, : ) = 0;
-                    
-                end
-                
-                if ( cm.len.dR2 > 0 )
-                    
-                    cm.dm.dR2( :, :, rng_n, 1, : ) = 0;
-                    
-                end
-                
-                if ( cm.len.dD > 0 )
-                    
-                    cm.dm.dD( :, :, rng_n, :, : ) = 0;
-                    cm.dEn_exp_dD( :, :, rng_n, :, : ) = 0;
-                    
-                end
-                
-                if ( cm.len.dB1 > 0 )
-                    
-                    cm.dm.dB1( :, :, rng_n ) = 0;
-                    
-                end
-                
-                if ( cm.len.dFlipAngle > 0 )
-                    
-                    cm.dm.dFlipAngle( :, :, rng_n, 1, : ) = 0;
-                    
-                end
-                
-                if ( cm.len.dPhase > 0 )
-                    
-                    cm.dm.dPhase( :, :, rng_n, 1, : ) = 0;
-                    
-                end
-                
-                if ( cm.len.dtau > 0 )
-                    
-                    cm.dm.dtau( :, :, rng_n, 1, : ) = 0;
-                    cm.dEn_exp_dtau( :, :, rng_n, 1, : ) = 0;
-                    
-                end
-                
-                if ( cm.len.dp > 0 )
-                    
-                    cm.dm.dp( :, :, rng_n, :, : ) = 0;
-                    cm.dEn_exp_dp( :, :, rng_n, :, :, : ) = 0;
-                    
-                end
-                
-                if ( cm.len.ds > 0 )
-                    
-                    cm.dm.ds( :, :, rng_n, :, : ) = 0;
-                    cm.dEn_exp_ds( :, :, rng_n, :, : ) = 0;
-                    
-                end
-                
-                if ( cm.len.dS > 0 )
-                    
-                    cm.dm.dS( :, :, rng_n, :, : ) = 0;
-                    cm.dEn_exp_dS( :, :, rng_n, :, : ) = 0;
-                    
-                end
-                
-            end
-            
-            if ( ~isempty( rng_d ) )
-                
-                cm.b_lambda( rng_d ) = false;
-                cm.lambda( rng_d ) = 0;
-                
-                cm.n( :, rng_d ) = 0;
-                
-                cm.b_up_free( :, rng_d ) = true;
-                cm.b_do_free( :, rng_d ) = true;
-                
-                cm.idx_up( :, rng_d ) = 0;
-                cm.idx_do( :, rng_d ) = 0;
-                
-                cm.b_E( rng_d ) = false;
-                cm.E( :, :, rng_d ) = 0;
-                
-                if ( cm.diffusion ~= CoMoTk.No_Diff )
-                    
-                    cm.b_En( :, rng_d ) = false;
-                    cm.En( :, :, :, rng_d ) = 0;
-                    cm.En_exp( :, :, :, rng_d ) = 0;
-                    
-                    cm.s( :, rng_d ) = 0;
-                    cm.S( :, rng_d ) = 0;
-                    
-                end
-
-                cm.b_tau( rng_d ) = false;
-                cm.tau( rng_d ) = 0;
-                
-                cm.b_p( rng_d ) = false;
-                cm.p( :, rng_d ) = 0;
-                                
-                if ( cm.len.dD > 0 )
-                    
-                    cm.dEn_exp_dD( :, :, :, :, rng_d ) = 0;
-                    
-                end
-                
-                if ( cm.len.dp > 0 )
-                    
-                    cm.dEn_exp_dp( :, :, :, :, :, rng_d ) = 0;
-                    
-                end
-                
-            end
-            
-            if ( cm.options.debug )
-                
-                fprintf( 1, 'reallocate_nd: (after) alloc_n = %d\n', cm.alloc_n );
-                fprintf( 1, 'reallocate_nd: (after) alloc_d = %d\n', cm.alloc_d );
-                
-            end
-            
-        end
-        
+              
     end
     
 end

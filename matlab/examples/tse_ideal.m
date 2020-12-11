@@ -58,6 +58,16 @@ while ( true )
     fa_ref_rad = par.fa_ref * pi / 180;
     resolution_um = 1000 * par.resolution;
     
+    %% prepare time between end of RF pulse and echo
+    
+    % duration
+    
+    tau_te = 0.5 * par.dTE;
+    
+    % gradient moment == crusher
+    
+    p_te = [ 2 * pi / resolution_um; 0; 0 ];
+        
     %% initialize configuration model (idealized sequence)
     
     cm_cpmg = CoMoTk;
@@ -73,40 +83,22 @@ while ( true )
     cm_no_cpmg.R2 = 1 / par.T2;
     cm_no_cpmg.D = par.D;
     
+    % allocated support in configuration space
+    
+    cm_cpmg.d_p = p_te;
+    cm_cpmg.n_p = [ 2 * par.n_echoes, 0, 0 ];
+    cm_cpmg.d_tau = tau_te;
+    cm_cpmg.n_tau = 2 * par.n_echoes;
+    
+    cm_no_cpmg.d_p = p_te;
+    cm_no_cpmg.n_p = [ 2 * par.n_echoes, 0, 0 ];
+    cm_no_cpmg.d_tau = tau_te;
+    cm_no_cpmg.n_tau = 2 * par.n_echoes;
+    
     % further parameters
     
     cm_cpmg.B1 = par.B1;
     cm_no_cpmg.B1 = par.B1;
-    
-    % get default options
-    
-    options = cm_cpmg.options;
-    
-    options.alloc_n = 1000;  % CoMoTk will allocate more, if needed
-    options.alloc_d = 2;     % 1 == half echo spacing with crusher
-    % 2 == time between last echo readout and next excitation pulse
-    %      (includes cpmg spoiler)
-    
-    options.epsilon = 0;
-    
-    % set new options
-    
-    cm_cpmg.options = options;
-    cm_no_cpmg.options = options;
-    
-    %% prepare time between end of RF pulse and echo
-    
-    % unique index
-    
-    lambda_te = 1;
-    
-    % duration
-    
-    tau_te = 0.5 * par.dTE;
-    
-    % gradient moment == crusher
-    
-    p_te = [ 2 * pi / resolution_um; 0; 0 ];
     
     %% allocate space for results
     
@@ -199,7 +191,6 @@ while ( true )
         % time to refocusing pulse
         
         param = [];
-        param.lambda = lambda_te;
         param.tau = tau_te;
         param.p = p_te;
         
@@ -221,7 +212,6 @@ while ( true )
         % time to echo
         
         param = [];
-        param.lambda = lambda_te;
         param.tau = tau_te;
         param.p = p_te;
         
@@ -232,7 +222,7 @@ while ( true )
         % only the zero order configuration along the crusher direction contributes to the voxel signal
         
         param = [];
-        param.b_n = cm_cpmg.find( lambda_te, 0 );
+        param.b_occ = cm_cpmg.b_occ & ( abs( cm_cpmg.p{ 1 } ) < 0.1 * p_te( 1 ) );
         
         % calculate the partial sum
         
@@ -245,7 +235,7 @@ while ( true )
         % no CPMG
         
         param = [];
-        param.b_n = cm_no_cpmg.find( lambda_te, 0 );
+        param.b_occ = cm_no_cpmg.b_occ & ( abs( cm_no_cpmg.p{ 1 } ) < 0.1 * p_te( 1 ) );
         
         % calculate the partial sum
         

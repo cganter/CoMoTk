@@ -77,8 +77,8 @@ while ( true )
     %% initialize configuration model
     
     cm_HS1 = CoMoTk;
-    cm_HS1_rapid = CoMoTk;
-    cm_Chirp_rapid = CoMoTk;
+    cm_HS1_0 = CoMoTk;
+    cm_Chirp_0 = CoMoTk;
     
     % mandatory tissue parameters
     
@@ -86,31 +86,22 @@ while ( true )
     cm_HS1.R2 = 1 / par.T2;
     cm_HS1.D = par.D;
     
-    cm_HS1_rapid.R1 = 0;
-    cm_HS1_rapid.R2 = 0;
-    cm_HS1_rapid.D = 0;
+    cm_HS1_0.R1 = 0;
+    cm_HS1_0.R2 = 0;
+    cm_HS1_0.D = 0;
     
-    cm_Chirp_rapid.R1 = 0;
-    cm_Chirp_rapid.R2 = 0;
-    cm_Chirp_rapid.D = 0;
+    cm_Chirp_0.R1 = 0;
+    cm_Chirp_0.R2 = 0;
+    cm_Chirp_0.D = 0;
     
-    % get default options
+    % allocated support in configuration space
     
-    options = cm_HS1_rapid.options;
-    
-    options.alloc_n = 1000;
-    options.alloc_d = 1;     % == intervals between small RF pulses
-    options.epsilon = 0;     % best accuracy
-    
-    % set new options
-    
-    cm_HS1.options = options;
-    cm_HS1_rapid.options = options;
-    cm_Chirp_rapid.options = options;
-    
-    % assign unique handles for the time interval
-    
-    lambda_rf = 1;
+    cm_HS1.d_tau = dt;
+    cm_HS1.n_tau = n_rf;
+    cm_HS1_0.d_tau = dt;
+    cm_HS1_0.n_tau = n_rf;
+    cm_Chirp_0.d_tau = dt;
+    cm_Chirp_0.n_tau = n_rf;
 
     % allocate space for transverse and longitudinal magnetization during the RF pulse
    
@@ -133,13 +124,13 @@ while ( true )
         param.Phase = phi_HS1( i );
 
         cm_HS1.RF( param );  
-        cm_HS1_rapid.RF( param );  
+        cm_HS1_0.RF( param );  
         
         param = [];
         param.FlipAngle = alpha_Chirp( i );
         param.Phase = phi_Chirp( i );
         
-        cm_Chirp_rapid.RF( param );            
+        cm_Chirp_0.RF( param );            
             
         % get actual state
         % (== complete sum over configurations)
@@ -149,10 +140,10 @@ while ( true )
         res = cm_HS1.sum( param );
         mz_HS1( i ) = real( res.z );
 
-        res = cm_HS1_rapid.sum( param );
+        res = cm_HS1_0.sum( param );
         mz_HS1_rapid( i ) = real( res.z );
 
-        res = cm_Chirp_rapid.sum( param );
+        res = cm_Chirp_0.sum( param );
         mz_Chirp_rapid( i ) = real( res.z );
 
         if ( i == n_rf )
@@ -164,10 +155,10 @@ while ( true )
                 res = cm_HS1.sum( param );
                 mz_freq_HS1( j ) = real( res.z );
                 
-                res = cm_HS1_rapid.sum( param );
+                res = cm_HS1_0.sum( param );
                 mz_freq_HS1_rapid( j ) = real( res.z );
                 
-                res = cm_Chirp_rapid.sum( param );
+                res = cm_Chirp_0.sum( param );
                 mz_freq_Chirp_rapid( j ) = real( res.z );
                 
             end
@@ -177,12 +168,11 @@ while ( true )
         % time interval
             
         param = [];
-        param.lambda = lambda_rf;
         param.tau = dt;
            
         cm_HS1.time( param );
-        cm_HS1_rapid.time( param );
-        cm_Chirp_rapid.time( param );
+        cm_HS1_0.time( param );
+        cm_Chirp_0.time( param );
             
     end
     

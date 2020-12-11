@@ -12,15 +12,15 @@ par = [];
 opt = [];
 str = [];
 
-par.T1 = [ 100, 500 ];
-par.T2 = [ 50, 250 ];
+par.T1 = [ 100, 200 ];
+par.T2 = [ 50, 100 ];
 par.D = 0;
 par.TR = 5;
 par.fa = 90;
 par.resolution = 1000;
 par.v_max = 120;
 par.n_v = 20;
-par.t_prep = 10;
+par.t_prep = 5;
 
 opt.T1 = [];
 opt.T2 = [];
@@ -68,17 +68,14 @@ while ( true )
     
     fa_rad = par.fa * pi / 180;
     
-    % to test the implementation, we individually set the directions of the crusher
-    % gradient and the velocity at random
-    
-    ec = randn( 3, 1 );
-    ec = ec ./ norm( ec );
+    % to test the implementation, we set the directions of the velocity at random
     
     ev = randn( 3, 1 );
     ev = ev ./ norm( ev );
     
     % moment of (constant) crusher gradient, effecting 2 * pi dephasing per TR and resolution
     
+    ec = [ 1; 0; 0 ];
     pc = ec ./ par.resolution;
     
     % we need the scalar product of 'ec' and 'ev' for the velocity component along the
@@ -107,10 +104,7 @@ while ( true )
         
         % parameters for time interval
  
-        lambda_crusher = 1;     % unique index
-
         Time_par = [];
-        Time_par.lambda = lambda_crusher;
         Time_par.tau = par.TR;
         Time_par.p = pc;
         
@@ -138,6 +132,13 @@ while ( true )
             cm.R2 = 1 / par.T2( i_Tx );
             cm.D = par.D;
             
+            % allocated support in configuration space
+            
+            cm.d_p = pc;
+            cm.n_p = [ n_TR; 0; 0 ];
+            cm.d_tau = par.TR;
+            cm.n_tau = n_TR;
+
             %% approach steady state
             
             for i_TR = 1 : n_TR
@@ -155,7 +156,7 @@ while ( true )
                     % since the signal from nonzero orders is (hopefully) dephased
                     
                     sel_conf = [];
-                    sel_conf.b_n = cm.find( lambda_crusher, 0 );
+                    sel_conf.b_occ = cm.b_occ & ( abs( cm.p{ 1 } ) < 0.1 * pc( 1 ) );
                     
                     % calculate the partial sum
                     
@@ -186,7 +187,6 @@ while ( true )
             in.R2 = 1 / par.T2( i_Tx );
             in.PDI = ( 180 / pi ) * par.TR * ( Time_par.p' * Time_par.v ); % phase difference increment
             in.acc = 3;  % digits of phase difference increment;
-            disp( in.PDI );
             
             out = ssfp_fid( in );
             

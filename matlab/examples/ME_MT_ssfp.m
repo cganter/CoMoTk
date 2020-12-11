@@ -91,6 +91,10 @@ while ( true )
     
     in.MT_sat = exp( - pi * omega_rf^2 * in.MT_G0 * tau_rf );
 
+    %% number of TR cycles to approach steady state
+    
+    num_TR = ceil( par.prep * max( [ in.ME_T1a, in.ME_T1b, in.MT_T1a, in.MT_T1b ] ) / par.TR );        
+
     %% set up configuration model
     
     ME_cm0 = CoMoTk;            % uncoupled spins
@@ -99,6 +103,18 @@ while ( true )
     MT_cm0 = CoMoTk;            % uncoupled spins
     MT_cm = CoMoTk;             % with ME or MT
     
+    % allocated support in configuration space
+    
+    ME_cm0.d_tau = par.TR;
+    ME_cm0.n_tau = num_TR;
+    ME_cm.d_tau = par.TR;
+    ME_cm.n_tau = num_TR;
+
+    MT_cm0.d_tau = par.TR;
+    MT_cm0.n_tau = num_TR;
+    MT_cm.d_tau = par.TR;
+    MT_cm.n_tau = num_TR;
+
     % mandatory tissue parameters
     
     ME_cm0.R1 = [ in.ME_R1a, in.ME_R1b ];
@@ -117,11 +133,11 @@ while ( true )
     
     % proton density
     
-    ME_cm0.mu = [ 1 - in.ME_f, in.ME_f ];
-    ME_cm.mu = [ 1 - in.ME_f, in.ME_f ];
+    ME_cm0.pd = [ 1 - in.ME_f, in.ME_f ];
+    ME_cm.pd = [ 1 - in.ME_f, in.ME_f ];
     
-    MT_cm0.mu = [ 1 - in.MT_f, in.MT_f ];
-    MT_cm.mu = [ 1 - in.MT_f, in.MT_f ];
+    MT_cm0.pd = [ 1 - in.MT_f, in.MT_f ];
+    MT_cm.pd = [ 1 - in.MT_f, in.MT_f ];
     
     % off-resonance frequency [rad/ms]
     
@@ -137,12 +153,6 @@ while ( true )
     
     MT_cm.k = [ 0, in.MT_kb; in.MT_ka, 0 ];
     
-    % default CoMoTk options are ok, no need to change them
-    
-    %% number of TR cycles to approach steady state
-    
-    num_TR = ceil( par.prep * max( [ in.ME_T1a, in.ME_T1b, in.MT_T1a, in.MT_T1b ] ) / par.TR );
-        
     %% prepare time between two RF pulses
     
     % unique index
@@ -158,7 +168,6 @@ while ( true )
             % time interval
             
             param = [];
-            param.lambda = lam_t;
             param.tau = par.TR;
             
             ME_cm0.time( param );

@@ -60,7 +60,12 @@ while ( true )
     cm.R1 = 1 / par.T1;
     cm.R2 = 1 / par.T2;
     cm.D = 0;
-        
+    
+    % spin memory defines the conservative support in configuration space
+    
+    cm.d_tau = tau;
+    cm.n_tau = round( par.dummy * par.T1 / tau );
+    
     % RF parameters 
         
     RF_par = [];
@@ -70,13 +75,12 @@ while ( true )
     % small time intervals
     
     Time_par = [];
-    Time_par.lambda = 1;             % arbitrary unique index
     Time_par.tau = tau;
 
     %% calculate number of TR dummy cycles to establish a steady state
     
     n_TR = ceil( par.dummy * par.T1 / par.TR );
-
+    
     % allocate space for results
     
     lorentz_cm = zeros( 1, par.n_int + 1 );

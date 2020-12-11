@@ -108,29 +108,6 @@ while ( true )
         verbose = false;
         
     end
-        
-    %% initialize configuration model
-    
-    cm = CoMoTk;
-    
-    % mandatory tissue parameters
-    
-    cm.R1 = 1 / par.T1;
-    cm.R2 = 1 / par.T2;
-    cm.D = par.D;
-    
-    % get default options
-    
-    options = cm.options;
-    
-    options.alloc_n = 1000;
-    options.alloc_d = 2;     % == slice selection and rephasing gradient
-    options.epsilon = 0;     % best accuracy
-    options.verbose = verbose;
-    
-    % set new options
-    
-    cm.options = options;
     
     %% calculate slice selection and rephasing gradient moment
     
@@ -146,10 +123,23 @@ while ( true )
     
     p_rf = [ 0; 0; p_sl / par.supp_rf ];
     
-    % assign unique handles for the two time intervals
+    %% initialize configuration model
     
-    lambda_rf = 1;
-
+    cm = CoMoTk;
+    
+    % mandatory tissue parameters
+    
+    cm.R1 = 1 / par.T1;
+    cm.R2 = 1 / par.T2;
+    cm.D = par.D;
+    
+    % allocated support in configuration space
+    
+    cm.d_tau = tau_rf;
+    cm.n_tau = par.supp_rf;
+    cm.d_p = p_rf;
+    cm.n_p = [ 0; 0; par.supp_rf ];
+    
     %% calculate SLR profile
     
     % Eq. (ll)
@@ -194,25 +184,15 @@ while ( true )
             
             cm.RF( param );
             
-            % in the first time interval, we specify the parameters
-            
-            param = [];
-            param.lambda = lambda_rf;
-            param.tau = tau_rf;
-            param.p = p_rf;
-            
-            cm.time( param );
-            
-        else
-            
-            % in subsequent calls, we only need the handle
-            
-            param = [];
-            param.lambda = lambda_rf;
-            
-            cm.time( param );
-            
         end
+            
+        % followed by a small time interval
+        
+        param = [];
+        param.tau = tau_rf;
+        param.p = p_rf;
+        
+        cm.time( param );
         
         % and the rest of the small pulses
         
@@ -229,21 +209,17 @@ while ( true )
     m_xy_CM = zeros( 1, n_sl );
     m_z_CM = zeros( 1, n_sl );
     
-    for i = 1 : n_sl
-        
-        % we sum over all configurations (third argument == [])
-        
-        param = [];
-        param.omega = omega;
-        param.x = x( :, i );
-        
-        res = cm.sum( param );
- 
-        m_xy_CM( i ) = res.xy;
-        m_z_CM( i ) = real( res.z );
-        
-    end
+    % we sum over all configurations (third argument == [])
     
+    param = [];
+    param.omega = omega;
+    param.x = x;              % we can submit all positions at once
+    
+    res = cm.sum( param );
+    
+    m_xy_CM( : ) = res.xy;
+    m_z_CM( : ) = real( res.z );
+        
     %% look at the results
     
     loc = x( 3, : ) .* 0.001;

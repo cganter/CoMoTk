@@ -8,14 +8,14 @@ par = [];
 opt = [];
 str = [];
 
-par.T1 = 500;
-par.T2 = 50;
+par.T1 = 100;
+par.T2 = 10;
 par.D = 3;
 par.TR = 5;
 par.fa = 30;
 par.dx_2pi = 20;
 par.n_max = 8;
-par.t_prep = 10;
+par.t_prep = 5;
 par.tensor = 'no';
 par.implicit = 'no';
 
@@ -76,47 +76,7 @@ while ( true )
     
     fa_rad = par.fa * pi / 180;
     
-    % routine returns configuration orders n = - n_max : n_max - 1
-    
-    n_max = par.n_max;
-    
-    % random orthogonal matrix
-    % (== rotation by random angle 'al_' around random axis 'no_')
-    
-    al_ = 2 * pi * rand( 1 );
-
-    c_al = cos( al_ );
-    s_al = sin( al_ );
-    
-    ph_ = 2 * pi * rand( 1 );
-
-    c_ph = cos( ph_ );
-    s_ph = sin( ph_ );
-
-    th_ = pi * rand( 1 );
-    
-    c_th = cos( th_ );
-    s_th = sin( th_ );
-        
-    no_ = [ s_th * c_ph; s_th * s_ph; c_th ];
-
-    Rot = [ ...
-        no_( 1 ) * no_( 1 ) * ( 1 - c_al ) + c_al, ...
-        no_( 1 ) * no_( 2 ) * ( 1 - c_al ) - no_( 3 ) * s_al, ...
-        no_( 1 ) * no_( 3 ) * ( 1 - c_al ) + no_( 2 ) * s_al; ...
-        no_( 2 ) * no_( 1 ) * ( 1 - c_al ) + no_( 3 ) * s_al, ...
-        no_( 2 ) * no_( 2 ) * ( 1 - c_al ) + c_al, ...
-        no_( 2 ) * no_( 3 ) * ( 1 - c_al ) - no_( 1 ) * s_al; ...
-        no_( 3 ) * no_( 1 ) * ( 1 - c_al ) - no_( 2 ) * s_al, ...
-        no_( 3 ) * no_( 2 ) * ( 1 - c_al ) + no_( 1 ) * s_al, ...
-        no_( 3 ) * no_( 3 ) * ( 1 - c_al ) + c_al ...
-        ];    
-    
     %% prepare time between two RF pulses
-    
-    % unique index
-    
-    lambda_time = 1;
     
     % constant gradient with 2 * pi dephasing per TR and dx_2pi
     
@@ -124,7 +84,9 @@ while ( true )
     
     % gradient moment in random direction
     
-    p = Rot * [ p_scal; 0; 0 ];
+    ip = randi( 3, 1 );
+    p = zeros( 3, 1 );
+    p( ip ) = p_scal;
     
     % gradient shape, as defined in the documentation (constant gradient)
     
@@ -145,6 +107,23 @@ while ( true )
     
     cm.R1 = 1 / par.T1;
     cm.R2 = 1 / par.T2;
+    
+    % allocated support in configuration space
+
+    n_p = zeros( 3, 1 );
+    n_p( ip ) = num_TR;
+    
+    cm_0.d_p = p;
+    cm_0.n_p = n_p;
+    cm_0.d_tau = par.TR;
+    cm_0.n_tau = num_TR;
+    
+    cm.d_p = p;
+    cm.n_p = n_p;
+    cm.d_tau = par.TR;
+    cm.n_tau = num_TR;
+    
+    % calculate diffusion coefficient / tensor
     
     if ( b_tensor )
 
@@ -167,27 +146,12 @@ while ( true )
         
         cm.D = par.D .* ( e_1 * e_1' ) + D_orth( 1 ) .* ( e_2 * e_2' ) + D_orth( 2 ) .* ( e_3 * e_3' );
         
-        % cm.D = par.D * eye( 3 );
-    
     else
         
         cm.D = par.D;
 
     end
     
-    % get default options
-    
-    options = cm.options;
-    
-    options.alloc_n = 1000;     % CoMoTk will allocate more, if needed
-    options.alloc_d = 1;        % only one time interval
-    options.epsilon = 0;
-    
-    % set new options
-    
-    cm_0.options = options;
-    cm.options = options;
-
     %% approach steady state
     
     for i = 1 : num_TR
@@ -197,7 +161,6 @@ while ( true )
             % time interval
             
             param = [];
-            param.lambda = lambda_time;
             param.tau = par.TR;
             
             cm_0.time( param );
@@ -241,6 +204,8 @@ while ( true )
     
     %% allocate space for results
     
+    n_max = par.n_max;
+    
     m_xy_0 = zeros( 1, 2 * n_max + 1 );
     m_z_0 = zeros( 1, 2 * n_max + 1 );
     m_xy = zeros( 1, 2 * n_max + 1 );
@@ -252,13 +217,21 @@ while ( true )
         
         n = i - n_max - 1;
         
-        b_n = cm_0.find( lambda_time, n );   % find location of configuration order n 
+        param = [];
+        param.b_occ = cm_0.b_occ & ( abs( cm_0.tau - n * par.TR ) < 0.1 * par.TR );
         
-        m_xy_0( i ) = sqrt( 2 ) * cm_0.m( 1, b_n );
-        m_z_0( i ) = cm_0.m( 2, b_n );
+        res = cm_0.sum( param );
         
-        m_xy( i ) = sqrt( 2 ) * cm.m( 1, b_n );
-        m_z( i ) = cm.m( 2, b_n );
+        m_xy_0( i ) = res.xy;
+        m_z_0( i ) = res.z;
+        
+        param = [];
+        param.b_occ = cm.b_occ & ( abs( cm.tau - n * par.TR ) < 0.1 * par.TR );
+        
+        res = cm.sum( param );
+        
+        m_xy( i ) = res.xy;
+        m_z( i ) = res.z;
         
     end
     
