@@ -19,6 +19,7 @@ par.t_rf = 1;
 par.supp_rf = 50;
 par.qual_rf = 1 : 3;
 par.filt_rf = 'Hamming';
+par.epsilon = 1e-4;
 
 opt.T1 = [];
 opt.T2 = [];
@@ -30,6 +31,7 @@ opt.t_rf = [];
 opt.supp_rf = [];
 opt.qual_rf = [];
 opt.filt_rf = { 'Hamming', 'None' };
+opt.epsilon = [];
 
 str.T1 = '[ms]';
 str.T2 = '[ms]';
@@ -41,6 +43,7 @@ str.t_rf = '[ms] RF pulse duration';
 str.supp_rf = 'number of RF support points';
 str.qual_rf = 'number of SINC pulse zero crossings (on each side)';
 str.filt_rf = 'filter RF pulse to reduce wiggles';
+str.epsilon = 'discard configurations with L2 norm smaller than this (0 == max. accuracy)';
 
 while ( true )
     
@@ -95,7 +98,11 @@ while ( true )
     % allocated support in configuration space
     
     cm_ideal.d_tau = TE;
-    cm_ideal.n_tau = 2 * num_TR;
+    cm_ideal.n_tau = 2 * par.num_TR;
+    
+    % define accuracy
+    
+    cm_ideal.epsilon = par.epsilon;
     
     % prepare RF pulses
     
@@ -274,12 +281,18 @@ while ( true )
         cm_real.R2 = 1 / par.T2;
         cm_real.D = 0;
         
+        % define accuracy
+    
+        cm_real.epsilon = par.epsilon;
+        
         % allocated support in configuration space
         
         cm_real.d_tau = DeltaTime.tau;
-        cm_real.n_tau = 2 * num_TR * round( par.TR / DeltaTime.tau );
+        cm_real.n_tau = 1e3;
+        %        cm_real.n_tau = 2 * num_TR * round( par.TR / DeltaTime.tau );
         cm_real.d_p = DeltaTime.p;
-        cm_real.n_p = [ 0; 0; par.supp_rf * 2 * num_TR ];
+        %        cm_real.n_p = [ 0; 0; par.supp_rf * 2 * num_TR ];
+        cm_real.n_p = [ 0; 0; 1e3 ];
         
         %% initialize timing
         
@@ -342,8 +355,8 @@ while ( true )
                 
             % in both cases and unlike the real case, we *further* need to integrate over the slice profile
             
-            select_conf.b_n = select_conf.b_n & ...
-                reshape( abs( cm_real.p_n( 3, : ) ) < 0.5 * abs( DeltaTime.p( 3 ) ), size( select_conf.b_n ) );
+            select_conf.occ = cm_real.occ & ...
+                abs( cm_real.p( 3, : ) ) < 0.5 * abs( DeltaTime.p( 3 ) );
             
             % calculate the partial sum
             
@@ -361,6 +374,8 @@ while ( true )
             
             fprintf( 1, 'real RF  = %9.3f sec\n', t_re( idx_TR ) );
             
+            return;
+        
         end
         
         fprintf( 1, 'real RF  =\t %9.3f sec total\n', sum( t_re ) );

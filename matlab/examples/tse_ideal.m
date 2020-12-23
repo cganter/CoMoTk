@@ -222,7 +222,7 @@ while ( true )
         % only the zero order configuration along the crusher direction contributes to the voxel signal
         
         param = [];
-        param.b_occ = cm_cpmg.b_occ & ( abs( cm_cpmg.p{ 1 } ) < 0.1 * p_te( 1 ) );
+        param.occ = cm_cpmg.occ & ( abs( cm_cpmg.p( 1, : ) ) < 0.1 * p_te( 1 ) );
         
         % calculate the partial sum
         
@@ -235,7 +235,7 @@ while ( true )
         % no CPMG
         
         param = [];
-        param.b_occ = cm_no_cpmg.b_occ & ( abs( cm_no_cpmg.p{ 1 } ) < 0.1 * p_te( 1 ) );
+        param.occ = cm_no_cpmg.occ & ( abs( cm_no_cpmg.p( 1, : ) ) < 0.1 * p_te( 1 ) );
         
         % calculate the partial sum
         

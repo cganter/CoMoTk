@@ -56,7 +56,7 @@ classdef CoMoTk < matlab.mixin.Copyable
         
         % default accuracy (0 == perfect)
         
-        epsilon = 1e-6;
+        epsilon = 0;
         
         % some informative output (occupied space, resizing, reallocations)
         
@@ -122,9 +122,9 @@ classdef CoMoTk < matlab.mixin.Copyable
         % dimension 1: 3d components (spatial and gradient moments), tissue
         % dimension 2: tau, p (3 components)
         
-        % the occupation of the second dimension is stored in various ways:
-        % a boolean sparse matrix of size == [ cm.occ_dim, 1 ]
-        % (see below for a definition of cm.occ_dim)
+        % stores information, which part of the allocated space is actually
+        % occupied by configurations, type == bool, 
+        % size( cm.occ ) = [ 1, cm.alloc ]
         
         occ = [];
         
@@ -136,26 +136,26 @@ classdef CoMoTk < matlab.mixin.Copyable
         
         occ_ind = [];
         
-        % from this the occupied indices of the subdimensions can be obtained:
-        % [ tau_ind, p1_ind, p2_ind, p3_ind ] = ind2sub( cm.occ_sub_dim, cm.occ_ind )
-        % the left hand side is stored in a matrix of size [ cm.n_occ, 4 ]:
+        % each occupied configuration is specified by the pair ( tau, p )
+        % and stored as array of size( cm.occ_sub ) == [ 4, cm.alloc ]
         
         occ_sub = [];
         
         % the maximum allowed values in cm.occ_sub are defined in an array
         % of size [ 1, 4 ]:
         
-        occ_sub_dim = [];
-        
-        % the product prod( cm.occ_sub_dim ) is stored in:
-        
-        occ_dim = [];
+        sub_dim = [];
         
         % index and subindex, corresponding to the origin of configuration
         % space
         
         null_ind = [];
         null_sub = [];
+        
+        % locations in allocated space
+        
+        null_idx = [];
+        occ_idx = [];
         
         % at any time, these infos about the occupied configurations are 
         % guaranteed to be consistent
@@ -173,10 +173,10 @@ classdef CoMoTk < matlab.mixin.Copyable
         n_tissues = 0;		                                               % number of tissues
 
         p = [];                                                            % accumulated gradient moments in configuration space
-                                                                           % size( cm.p ) == [ 3, cm.occ_dim ]
+                                                                           % size( cm.p ) == [ 3, cm.alloc ]
         
         tau = [];                                                          % accumulated net transverse durations
-                                                                           % size( cm.tau ) == [ 1, cm.occ_dim ]
+                                                                           % size( cm.tau ) == [ 1, cm.alloc ]
     
         %% mandatory tissue properties
         % general properties
@@ -407,7 +407,7 @@ classdef CoMoTk < matlab.mixin.Copyable
                 
             end
                         
-            cm.d_p_priv = d_p( : );
+            cm.d_p_priv = d_p( : )';
             
         end
         
@@ -716,13 +716,15 @@ classdef CoMoTk < matlab.mixin.Copyable
             RotMat( 3, 1 ) = conj( RotMat( 1, 3 ) );
             RotMat( 3, 2 ) = - RotMat( 2, 1 );
             RotMat( 3, 3 ) = RotMat( 1, 1 );
+
+            %% Magnetization exchange/transfer
+            
+            b_MT = false( 1, cm.n_tissues );
+            n_MT = 0;
             
             if ( cm.n_tissues > 1 )
                  
                 % check for magnetization transfer (MT)
-                
-                b_MT = false( 1, cm.n_tissues );
-                n_MT = 0;
                 
                 if ( isfield( param, 'MT_sat' ) )
                     
@@ -926,66 +928,55 @@ classdef CoMoTk < matlab.mixin.Copyable
                 
                 if ( cm.diffusion == CoMoTk.Iso_Diff )
                     
-                    pn2 = sum( cm.p .* cm.p );                             % size( pn2 ) == [ 1, cm.occ_dim ]  (sparse matrix)
-                    pns = sparse( s_' ) * cm.p;                            % size( pns ) == [ 1, cm.occ_dim ]  (sparse matrix)
+                    pn2 = sum( cm.p( :, cm.occ ) .* cm.p( :, cm.occ ) );   % size( pn2 ) == [ 1, cm.n_occ ]
+                    pns = sparse( s_' ) * cm.p( :, cm.occ );               % size( pns ) == [ 1, cm.n_occ ]
+                    
+                    tau_D = tau_ .* cm.D( : );                             % size( tau_D ) == [ cm.n_tissues, 1 ]
 
-                    Diff_Damp_exp = ...
-                        sparse( ...
-                        [ 1 : 3 : cm.m_dim( 1 ), ...
-                        2 : 3 : cm.m_dim( 1 ), ... 
-                        3 : 3 : cm.m_dim( 1 ) ]', ...
-                        repelem( 1 : 3, cm.n_tissues )', ...
-                        repmat( tau_ .* cm.D( : ), [ 3, 1 ] ), ...
-                        cm.m_dim( 1 ), 3 ) ...
-                        * ...
-                        sparse( repelem( 1 : 3, cm.n_occ )', ...
-                        repmat( cm.occ_ind, [ 3, 1 ] ), ...
-                        [ ...
-                        - pn2( cm.occ ) - pns( cm.occ ) - S_; ...
-                        - pn2( cm.occ ); ...
-                        - pn2( cm.occ ) + pns( cm.occ ) - S_ ], ...
-                        3, cm.occ_dim );
+                    Diff_Damp = zeros( cm.m_dim, cm.n_occ );
+                    
+                    Diff_Damp( [ 1 : 3 : end, 2 : 3 : end, 3 : 3 : end ], : ) = ...
+                        exp( [ ...
+                        - tau_D .* ( pn2 + pns + S_ ); ...
+                        - tau_D .* pn2; ...
+                        - tau_D .* ( pn2 - pns + S_ ); ...
+                        ] );
                     
                 elseif ( cm.diffusion == CoMoTk.Tensor_Diff )
                     
-                    tau_D = tau_ .* reshape( cm.D_vec', [ cm.n_tissues, 6 ] );
+                    tau_D = tau_ .* cm.D_vec';                             % size == [ cm.n_tissues, 6 ];
                     
-                    pp = [ ...
-                        sparse( cm.p( 1, : ) .* cm.p( 1, : ) ); ...        % zz 
-                        sparse( cm.p( 2, : ) .* cm.p( 2, : ) ); ...        % yy 
-                        sparse( cm.p( 3, : ) .* cm.p( 3, : ) ); ...        % zz 
-                        sparse( cm.p( 1, : ) .* cm.p( 2, : ) ); ...        % xy  
-                        sparse( cm.p( 1, : ) .* cm.p( 3, : ) ); ...        % xz  
-                        sparse( cm.p( 2, : ) .* cm.p( 3, : ) ) ];          % yz  
-                        
-                    tau_pDp = tau_D * pp;                                  % size == [ cm.n_tissues, cm.occ_dim ]
+                    pp = [ ...                                             % size == [ 6, cm.n_occ ]
+                        cm.p( 1, cm.occ ) .* cm.p( 1, cm.occ ); ...        % zz
+                        cm.p( 2, cm.occ ) .* cm.p( 2, cm.occ ); ...        % yy
+                        cm.p( 3, cm.occ ) .* cm.p( 3, cm.occ ); ...        % zz
+                        cm.p( 1, cm.occ ) .* cm.p( 2, cm.occ ); ...        % xy
+                        cm.p( 1, cm.occ ) .* cm.p( 3, cm.occ ); ...        % xz
+                        cm.p( 2, cm.occ ) .* cm.p( 3, cm.occ ) ];          % yz
+                    
+                    tau_pDp = tau_D * pp;                                  % size == [ cm.n_tissues, cm.n_occ ]
                     
                     tau_D = tau_ .* ...
                         reshape( s_' * reshape( cm.D, 3, [] ), 3, [] )';   % size == [ cm.n_tissues, 3 ];
                     
-                    tau_pDs = tau_D * cm.p;                                % size == [ cm.n_tissues, cm.occ_dim ] 
+                    tau_pDs = tau_D * cm.p( :, cm.occ );                   % size == [ cm.n_tissues, cm.n_occ ] 
                     
-                    Diff_Damp_exp = ...
-                        sparse( ...
-                        [ 1 : 3 : cm.m_dim( 1 ), ...
-                        2 : 3 : cm.m_dim( 1 ), ...
-                        3 : 3 : cm.m_dim( 1 ) ]', ...
-                        repmat( cm.occ_ind, [ 3, 1 ] ), ...
-                        [ ...
-                        - tau_pDp( :, cm.occ ) - tau_pDs( :, cm.occ ) - repmat( S_, [ 1, cm.n_occ ] ); ...
-                        - tau_pDp( :, cm.occ ); ...
-                        - tau_pDp( :, cm.occ ) + tau_pDs( :, cm.occ ) - repmat( S_, [ 1, cm.n_occ ] ) ], ...
-                        cm.m_dim( 1 ), cm.occ_dim );
-                                        
+                    tau_DS_ = tau_ .* ( cm.D_vec' * S_ );                  % size == [ cm.n_tissues, 1 ]
+                    
+                    Diff_Damp = zeros( cm.m_dim, cm.n_occ );
+                    
+                    Diff_Damp( [ 1 : 3 : end, 2 : 3 : end, 3 : 3 : end ] , : ) = ...
+                        exp( [ ...
+                        - tau_pDp - tau_pDs - tau_DS_; ...
+                        - tau_pDp; ...
+                        - tau_pDp + tau_pDs - tau_DS_ ...
+                        ] );
+                                                            
                 else
                     
                     error( 'Unexpected value for ''cm.diffusion''.' );
                     
                 end
-                    
-                % update diffusion damping factors
-                    
-                Diff_Damp = spfun( @exp, Diff_Damp_exp );
                     
             end
             
@@ -994,8 +985,8 @@ classdef CoMoTk < matlab.mixin.Copyable
             cs_tau = ones( 3, cm.n_tissues );
             
             cs_tau( 1, : ) = exp( - 1i .* cm.dom .* tau_ );
-            cs_tau( 3, : ) = conj( cs_tau( 1, : ) );    
-           
+            cs_tau( 3, : ) = conj( cs_tau( 1, : ) );
+            
             %% execute: relaxation, chemical shift, diffusion damping, chemical exchange
             
             if ( isempty( cm.k ) )              % no magnetization exchange
@@ -1004,15 +995,13 @@ classdef CoMoTk < matlab.mixin.Copyable
                 
                 % chemical shift and relaxation                
                 
-                cm.m( :, cm.occ ) = ...
-                    spdiags( reshape( cs_tau .* E, [ cm.m_dim( 1 ), 1 ] ), 0, cm.m_dim( 1 ), cm.m_dim( 1 ) ) * ...
-                    cm.m( :, cm.occ );
+                cm.m( :, cm.occ ) = ( cs_tau( : ) .* E( : ) ) .* cm.m( :, cm.occ );
                 
                 % diffusion damping, if relevant
                 
                 if ( ~isempty( Diff_Damp ) )
 
-                    cm.m = Diff_Damp .* cm.m;
+                    cm.m( :, cm.occ ) = Diff_Damp .* cm.m( :, cm.occ );
                     
                 end
                 
@@ -1083,14 +1072,14 @@ classdef CoMoTk < matlab.mixin.Copyable
                 
                 % relaxation
                   
-                cm.m( 1 : 3 : end, : ) = ...
-                    exp_Y_tau_1 * cm.m( 1 : 3 : end, : );
+                cm.m( 1 : 3 : end, cm.occ ) = ...
+                    exp_Y_tau_1 * cm.m( 1 : 3 : end, cm.occ );
                 
-                cm.m( 2 : 3 : end, : ) = ...
-                    exp_Y_tau_0 * cm.m( 2 : 3 : end, : );
+                cm.m( 2 : 3 : end, cm.occ ) = ...
+                    exp_Y_tau_0 * cm.m( 2 : 3 : end, cm.occ );
                 
-                cm.m( 3 : 3 : end, : ) = ...
-                    conj( exp_Y_tau_1 ) * cm.m( 3 : 3 : end, : );
+                cm.m( 3 : 3 : end, cm.occ ) = ...
+                    conj( exp_Y_tau_1 ) * cm.m( 3 : 3 : end, cm.occ );
                 
             end
                        
@@ -1130,11 +1119,11 @@ classdef CoMoTk < matlab.mixin.Copyable
                 
                 ei_dth = exp( 1i * dth );
                 
-                cm.m( 1 : 3 : end, : ) = ...
-                    ei_dth .* cm.m( 1 : 3 : end, : );
+                cm.m( 1 : 3 : end, cm.occ ) = ...
+                    ei_dth .* cm.m( 1 : 3 : end, cm.occ );
                 
-                cm.m( 3 : 3 : end, : ) = ...
-                    conj( ei_dth ) .* cm.m( 3 : 3 : end, : );
+                cm.m( 3 : 3 : end, cm.oc ) = ...
+                    conj( ei_dth ) .* cm.m( 3 : 3 : end, cm.occ );
                 
             end
             
@@ -1165,11 +1154,11 @@ classdef CoMoTk < matlab.mixin.Copyable
             % reindex, if necessary            
             
             shift_ = [ tau_shift, p_shift ];
-            
-            occ_range = max( cm.occ_sub ) - min( cm.occ_sub ) + 1;
+
+            occ_range = max( cm.occ_sub( cm.occ, : ), [], 1 ) - min( cm.occ_sub( cm.occ, : ), [], 1 ) + 1;
             new_occ_range = occ_range + 2 .* abs( shift_ );
             
-            out_of_range = new_occ_range > cm.occ_sub_dim;
+            out_of_range = new_occ_range > cm.sub_dim;
             
             if ( any( out_of_range ) )
                 
@@ -1177,16 +1166,28 @@ classdef CoMoTk < matlab.mixin.Copyable
                     
                     fprintf( 1, 'Increase dimensions:\n' );
                     fprintf( 1, '[ %d, %d, %d, %d ] -> ', ...
-                        cm.occ_sub_dim( 1 ), cm.occ_sub_dim( 2 ), cm.occ_sub_dim( 3 ), cm.occ_sub_dim( 4 ) );
+                        cm.sub_dim( 1 ), cm.sub_dim( 2 ), cm.sub_dim( 3 ), cm.sub_dim( 4 ) );
                     
                 end
                 
-                cm.occ_sub_dim( out_of_range ) = 2 .* new_occ_range( out_of_range ) + 1;
+                cm.sub_dim( out_of_range ) = 2 .* new_occ_range( out_of_range ) + 1;
                 
+                if ( out_of_range( 1 ) )
+                    
+                    cm.n_tau = new_occ_range( 1 );
+                    
+                end 
+                   
+                if ( any( out_of_range( 2 : 4 ) ) )
+                    
+                    cm.n_p( out_of_range( 2 : 4 ) ) = new_occ_range( out_of_range( 2 : 4 ) );
+                    
+                end 
+                                   
                 if ( cm.verbose )
                     
                     fprintf( 1, '[ %d, %d, %d, %d ]\n', ...
-                        cm.occ_sub_dim( 1 ), cm.occ_sub_dim( 2 ), cm.occ_sub_dim( 3 ), cm.occ_sub_dim( 4 ) );
+                        cm.sub_dim( 1 ), cm.sub_dim( 2 ), cm.sub_dim( 3 ), cm.sub_dim( 4 ) );
                     
                 end
                 
@@ -1199,56 +1200,13 @@ classdef CoMoTk < matlab.mixin.Copyable
                 % configuration space
                 
                 cm.null_sub( out_of_range ) = new_occ_range( out_of_range ) + 1;
-                cm.null_ind = sub2ind( cm.occ_sub_dim, cm.null_sub( 1 ), cm.null_sub( 2 ), cm.null_sub( 3 ), cm.null_sub( 4 ) );
+                cm.null_ind = sub2ind( cm.sub_dim, cm.null_sub( 1 ), cm.null_sub( 2 ), cm.null_sub( 3 ), cm.null_sub( 4 ) );
                 
                 % now we reindex the occupied information
                 
-                cm.occ_sub = cm.occ_sub + delta_sub;
-                cm.occ_ind = sub2ind( cm.occ_sub_dim, cm.occ_sub( :, 1 ), cm.occ_sub( :, 2 ), cm.occ_sub( :, 3 ), cm.occ_sub( :, 4 ) );
-                cm.occ_dim = prod( cm.occ_sub_dim );
+                cm.occ_sub( cm.occ, : ) = cm.occ_sub( cm.occ, : ) + delta_sub;
+                cm.occ_ind( cm.occ ) = sub2ind( cm.sub_dim, cm.occ_sub( cm.occ, 1 ), cm.occ_sub( cm.occ, 2 ), cm.occ_sub( cm.occ, 3 ), cm.occ_sub( cm.occ, 4 ) );
                 
-                % update cm.m
-                
-                cm.m_dim = [ cm.m_dim( 1 ), cm.occ_dim ];
-                
-                cm.m = sparse( ...
-                    repmat( ( 1 : cm.m_dim( 1 ) )', [ cm.n_occ, 1 ] ), ...
-                    repmat( cm.occ_ind, [ cm.sz( 1 ), 1 ] ), ...
-                    reshape( full( cm.m( :, cm.occ ) ), [ cm.sz( 1 ) * cm.n_occ, 1 ] ), ...
-                    cm.m_dim( 1 ), ...
-                    cm.occ_dim, ...
-                    round( cm.m_dim( 1 ) * cm.alloc ) );
-
-                % update cm.tau
-                
-                cm.tau = sparse( ...
-                    1, ...
-                    cm.occ_ind, ...
-                    reshape( full( cm.tau( 1, cm.occ ) ), [ cm.n_occ, 1 ] ), ...
-                    1, ...
-                    cm.occ_dim, ...
-                    round( cm.alloc ) );
-
-                % update cm.p
-                
-                cm.p = sparse( ...
-                    repmat( ( 1 : 3 )', [ cm.n_occ, 1 ] ), ...
-                    repmat( cm.occ_ind, [ 3, 1 ] ), ...
-                    reshape( full( cm.p( :, cm.occ ) ), [ 3 * cm.n_occ, 1 ] ), ...
-                    3, ...
-                    cm.occ_dim, ...
-                    round( 3 * cm.alloc ) );
-
-                % update cm.occ
-                
-                cm.occ = sparse( ...
-                    1, ...
-                    cm.occ_ind, ...
-                    true, ...
-                    cm.occ_dim, ...
-                    1, ...
-                    round( cm.alloc ) );
-
             end
             
             % calculate shifted occupied indices
@@ -1256,102 +1214,212 @@ classdef CoMoTk < matlab.mixin.Copyable
             % shifted in different directions for the two transverse
             % components
             
-            occ_sub_p = cm.occ_sub + shift_;
-            occ_sub_m = cm.occ_sub - shift_;
+            occ_sub_p = cm.occ_sub( cm.occ, : ) + shift_;
+            occ_sub_m = cm.occ_sub( cm.occ, : ) - shift_;
             
             % and the associated linear indices
             
-            occ_ind_p = sub2ind( cm.occ_sub_dim, occ_sub_p( 1 ), occ_sub_p( 2 ), occ_sub_p( 3 ), occ_sub_p( 4 ) );
-            occ_ind_m = sub2ind( cm.occ_sub_dim, occ_sub_m( 1 ), occ_sub_m( 2 ), occ_sub_m( 3 ), occ_sub_m( 4 ) );
+            occ_ind_p = sub2ind( cm.sub_dim, occ_sub_p( :, 1 ), occ_sub_p( :, 2 ), occ_sub_p( :, 3 ), occ_sub_p( :, 4 ) );
+            occ_ind_m = sub2ind( cm.sub_dim, occ_sub_m( :, 1 ), occ_sub_m( :, 2 ), occ_sub_m( :, 3 ), occ_sub_m( :, 4 ) );
             
-            % we build the corresponding sparse boolean matrices
+            %% now we check for new configurations in both directions
+            % in positive direction
             
-            occ_p = sparse( occ_ind_p, 1, true, [ cm.occ_dim, 1 ], 1 );
-            occ_m = sparse( occ_ind_m, 1, true, [ cm.occ_dim, 1 ], 1 );
+            tmp_ = [ cm.occ_ind( cm.occ ); occ_ind_p ];                 % concatenate old and shifted indices
+            [ ~, i_ ] = unique( tmp_, 'first' );                           % show first appearance of each index
+            new_ind_p = tmp_( i_( i_ > cm.n_occ ) );                       % these first appear in the second half and are therefore new 
             
-            % newly occupied locations
+            % in negative direction
             
-            occ_p_new = occ_p;
-            occ_p_new( cm.occ ) = false;
+            tmp_ = [ cm.occ_ind( cm.occ ); occ_ind_m ];                 % concatenate old and shifted indices
+            [ ~, i_ ] = unique( tmp_, 'first' );                           % show first appearance of each index
+            new_ind_m = tmp_( i_( i_ > cm.n_occ ) );                       % these first appear in the second half and are therefore new 
+            
+            % new indices without duplicates
+            
+            new_ind = unique( [ new_ind_p; new_ind_m ] );
+            
+            % in place new indices for all coordinates
 
-            occ_m_new = occ_m;
-            occ_m_new( cm.occ ) = false;
+            tmp_ = [ occ_ind_p; cm.occ_ind( cm.occ ); new_ind ];
+            [ ~, i_ ] = unique( tmp_, 'first' );                           
+            ind_p = [ occ_ind_p; tmp_( i_( i_ > cm.n_occ ) ); ];        
             
-            % locations, for which entries in cm.m should be deleted
+            ind_0 = [ cm.occ_ind( cm.occ ); new_ind ];        
             
-            occ_p_del = cm.occ;
-            occ_p_del( occ_p ) = false;
+            tmp_ = [ occ_ind_m; cm.occ_ind( cm.occ ); new_ind ];
+            [ ~, i_ ] = unique( tmp_, 'first' );                           
+            ind_m = [ occ_ind_m; tmp_( i_( i_ > cm.n_occ ) ); ];        
             
-            occ_m_del = cm.occ;
-            occ_m_del( occ_m ) = false;
+            % now we determine the appropriate sorting for the new
+            % locations
             
-            % shift the two transverse components in configuration space
-  
-            cm.m( 1 : 3 : end, occ_p ) = ...
-                cm.m( 1 : 3 : end, cm.occ );
+            [ ~, i_sort_p ] = sort( ind_p );
+            [ sort_ind, i_sort_0 ] = sort( ind_0 );
+            [ ~, i_sort_m ] = sort( ind_m );
 
-            cm.m( 3 : 3 : end, occ_m ) = ...
-                cm.m( 3 : 3 : end, cm.occ );
+            % check, whether allocated space is sufficient and reallocate,
+            % if necessary
+            
+            n_new = length( new_ind );
+            
+            while ( n_new + cm.n_occ > cm.alloc )
+                
+                new_alloc = 2 * cm.alloc;
+                
+                occ_ = cm.occ;
+                cm.occ = false( 1, new_alloc );
+                cm.occ( 1 : cm.alloc ) = occ_;
+                
+                occ_sub_ = cm.occ_sub;
+                cm.occ_sub = false( new_alloc, 4 );
+                cm.occ_sub( 1 : cm.alloc, : ) = occ_sub_;
+                
+                occ_ind_ = cm.occ_ind;
+                cm.occ_ind = false( new_alloc, 1 );
+                cm.occ_ind( 1 : cm.alloc, : ) = occ_ind_;
+                
+                m_ = cm.m;
+                cm.m = zeros( cm.m_dim, new_alloc );
+                cm.m( :, 1 : cm.alloc ) = m_;
+                
+                tau_ = cm.tau;
+                cm.tau = zeros( 1, new_alloc );
+                cm.tau( :, 1 : cm.alloc ) = tau_;
+                
+                p_ = cm.p;
+                cm.p = zeros( 3, new_alloc );
+                cm.p( :, 1 : cm.alloc ) = p_;
+                
+                cm.alloc = new_alloc;
+                
+            end
 
-            % set unoccupied locations to zero
+            % where to store the new configurations?
             
-            cm.m( 1 : 3 : end, occ_p_del ) = 0;
-            cm.m( 3 : 3 : end, occ_m_del ) = 0;
+            idx_new = find( ~cm.occ, n_new );
             
-            % set p and tau for the new occupied locations
-
-            occ_new = occ_p_new | occ_m_new;
-            occ_ind_new = find( occ_new );
+            cm.occ_idx = sort( [ cm.occ_idx, idx_new ] );
             
-            new_val = [ cm.d_tau, cm.d_p ] .* ...
-                ( ind2sub( cm.occ_sub_dim, occ_ind_new ) - cm.null_sub );
+            % now perform the shift for the magnetization density
             
-            cm.tau( occ_new ) = new_val( 1, : );
-            cm.p( :, occ_new ) = new_val( 2 : end, : )';
+            ii_sort_p = sort( i_sort_p );            
             
-            % and update the occupied space
-            % since cm.occ is true, if either spatial component of cm.m is
-            % occupied, there is no deletion as for the components of the
-            % latter
+            m_ = cm.m( 1 : 3 : end, cm.occ );
+            cm.m( 1 : 3 : end, cm.occ ) = 0;
+            cm.m( 1 : 3 : end, cm.occ_idx( ii_sort_p( 1 : cm.n_occ ) ) ) = m_;
             
-            cm.occ = cm.occ | occ_new;
+            ii_sort_0 = sort( i_sort_0 );            
             
-            cm.n_occ = cm.n_occ + sum( occ_new( : ) );
+            m_ = cm.m( 2 : 3 : end, cm.occ );
+            cm.m( 2 : 3 : end, cm.occ ) = 0;
+            cm.m( 2 : 3 : end, cm.occ_idx( ii_sort_0( 1 : cm.n_occ ) ) ) = m_;
+            
+            ii_sort_m = sort( i_sort_m );
+            
+            m_ = cm.m( 3 : 3 : end, cm.occ );
+            cm.m( 3 : 3 : end, cm.occ ) = 0;
+            cm.m( 3 : 3 : end, cm.occ_idx( ii_sort_m( 1 : cm.n_occ ) ) ) = m_;
+            
+            cm.occ_ind( cm.occ_idx ) = sort_ind;
+            [ cm.occ_sub( cm.occ_idx, 1 ), ...
+                cm.occ_sub( cm.occ_idx, 2 ), ...
+                cm.occ_sub( cm.occ_idx, 3 ), ...
+                cm.occ_sub( cm.occ_idx, 4 ) ] = ...
+                ind2sub( cm.sub_dim, sort_ind );
+            
+            cm.tau( cm.occ_idx ) = cm.d_tau .* ( cm.occ_sub( cm.occ_idx, 1 ) - cm.null_sub( 1 ) );
+            
+            for i = 1 : 3
+            
+                cm.p( i, cm.occ_idx ) = cm.d_p( i ) .* ( cm.occ_sub( cm.occ_idx, i + 1 ) - cm.null_sub( i + 1 ) );
+                
+            end
+            
+            % update rest
+            
+            if ( cm.verbose )
+                
+                fprintf( 1, 'n_occ: %d \t->\t', cm.n_occ );
+                
+            end
+            
+            cm.n_occ = cm.n_occ + n_new;
+            cm.occ( idx_new ) = true;
+            cm.null_idx = find( cm.null_ind == cm.occ_ind );
+            
+            if ( cm.verbose )
+                
+                fprintf( 1, '%d', cm.n_occ );
+                
+            end
                         
             %% repolarization
             
             if ( isempty( cm.k ) )              % no magnetization exchange
                                 
-                cm.m( 2 : 3 : end, cm.null_ind ) = ...
-                    cm.m( 2 : 3 : end, cm.null_ind ) + ...
+                cm.m( 2 : 3 : end, cm.null_idx ) = ...
+                    cm.m( 2 : 3 : end, cm.null_idx ) + ...
                     ( cm.pd .* ( 1 - E( 2, : ) ) )';
                 
             else                              % with magnetization exchange
 
                 % (here, the relative proton densities come into play)
                 
-                cm.m( 2 : 3 : end, cm.null_ind ) = ...
-                    cm.m( 2 : 3 : end, cm.null_ind ) - ...
+                cm.m( 2 : 3 : end, cm.null_idx ) = ...
+                    cm.m( 2 : 3 : end, cm.null_idx ) - ...
                     reshape( Y_0 \ ( ( eye( cm.n_tissues ) - exp_Y_tau_0 ) * y ), [ cm.n_tissues, 1 ] );
                 
             end            
             
             % now we remove small configurations
             
+            n_del = 0;
+            
             if ( cm.epsilon > 0 )
                
-                m_occ = sum( cm.m.^2 );
-                b_del = cm.occ & m_occ < cm.epsilon^2;
+                occ_idx_ = cm.occ_idx;
+                occ_idx_( occ_idx_ == cm.null_idx ) = [];                  % never remove ( tau, p ) == ( 0, 0 )
                 
-                if ( nnz( b_del ) > 0 )
+                m_occ = sum( cm.m( :, occ_idx_ ) .* conj( cm.m( :, occ_idx_ ) ) );
+                b_del = m_occ < cm.epsilon^2;
                 
-                    cm.m( :, b_del ) = 0;
-                    cm.occ( b_del ) = false;
-                    cm.n_occ = cm.n_occ - sum( b_del( : ) );
+                if ( cm.verbose )
                 
+                    fprintf( 1, '\t-\t %d', sum( b_del ) );
+                
+                end
+                                
+                if ( n_del > 0 )
+                    
+                    cm.m( :, occ_idx_( b_del ) ) = 0;
+                    cm.occ( occ_idx_( b_del ) ) = false;
+                    cm.n_occ = cm.n_occ - n_del;
+                    cm.occ_idx = find( cm.occ );
+
+                end
+                
+                if ( cm.verbose )
+                
+                    fprintf( 1, '\t=\t %d\n', cm.n_occ );
+                
+                end
+                
+            else
+                
+                if ( cm.verbose )
+                    
+                    fprintf( '\n' );
+                    
                 end
                     
             end
+            
+            % update logging information
+            
+            cm.log.t = [ cm.log.t, cm.log.t( end ) + tau_ ];
+            cm.log.n_occ = [ cm.log.n_occ, cm.n_occ ];
+            cm.log.n_del = [ cm.log.n_del, n_del ];
             
         end
         
@@ -1435,7 +1503,7 @@ classdef CoMoTk < matlab.mixin.Copyable
                 % size( w_n_ ) == [ 1, n_occ, n_om ]
                 
                 w_n_ = w_n_ .* ...
-                    exp( - 1i .* omega_ .* reshape( cm.tau( occ_ ), 1, [] ) );
+                    exp( - 1i .* omega_ .* reshape( full( cm.tau( occ_ ) ), 1, [] ) );
             
             end
 
@@ -1455,7 +1523,7 @@ classdef CoMoTk < matlab.mixin.Copyable
             
             if ( ~isempty( cm.inhomogeneous_decay ) )
                 
-                w_n_ = w_n_ .* cm.inhomogeneous_decay( cm.tau( occ_ ), param );
+                w_n_ = w_n_ .* cm.inhomogeneous_decay( full( cm.tau( occ_ ) ), param );
                 
             end
             
@@ -1619,34 +1687,45 @@ classdef CoMoTk < matlab.mixin.Copyable
             %% initialize everything
             % calculate dimensions and indices
             
-            cm.occ_sub_dim = [ 2 .* cm.n_tau + 1, 2 .* cm.n_p + 1 ];
-            cm.occ_dim = prod( cm.occ_sub_dim );
-            cm.m_dim = [ 3 * cm.n_tissues, cm.occ_dim ];
+            cm.sub_dim = [ 2 .* cm.n_tau + 1, 2 .* cm.n_p + 1 ];
+            cm.m_dim = 3 * cm.n_tissues;
             cm.null_sub = [ cm.n_tau + 1, cm.n_p + 1 ];
-            cm.null_ind = sub2ind( cm.occ_sub_dim, ...
+            cm.null_ind = sub2ind( cm.sub_dim, ...
                 cm.null_sub( 1 ), cm.null_sub( 2 ), cm.null_sub( 3 ), cm.null_sub( 4 ) );
             cm.n_occ = 1;        
-            cm.occ_ind = cm.null_ind;
-            cm.occ_sub = cm.null_sub;
             
-            % allocate sparse matrices
+            cm.null_idx = 1;                                               % index for ( tau, p ) == ( 0, 0 )
+            cm.occ_idx = 1;                                                % indices of occupied locations                             
             
-            cm.occ = sparse( cm.null_ind, 1, true, cm.occ_dim, 1, round( cm.alloc ) );
+            % allocate space for information about occupied configurations
             
-            cm.m = sparse( ...
-                ( 2 : 3 : cm.m_dim( 1 ) )', ...
-                cm.null_ind, cm.pd( : ), cm.m_dim( 1 ), cm.occ_dim, round( cm.m_dim( 1 ) * cm.alloc ) );
-        
-            cm.tau = sparse( [], [], [], 1, cm.occ_dim, round( cm.alloc ) );
-
-            cm.p = sparse( [], [], [], 3, cm.occ_dim, ( 3 * cm.alloc ) );
+            cm.occ = false( 1, cm.alloc );
+            cm.occ( cm.null_idx ) = true;                                  
+            
+            cm.occ_sub = zeros( cm.alloc, 4 );
+            cm.occ_sub( cm.null_idx, : ) = cm.null_sub;
+            
+            cm.occ_ind = zeros( cm.alloc, 1 );
+            cm.occ_ind( cm.null_idx ) = cm.null_ind;
+            
+            cm.m = zeros( cm.m_dim, cm.alloc );
+            cm.m( 2 : 3 : end, cm.null_idx ) = cm.pd;
+            
+            cm.tau = zeros( 1, cm.alloc );
+            cm.p = zeros( 3, cm.alloc );
+            
+            % prepare logging information
+            
+            cm.log.t = 0;
+            cm.log.n_occ = 0;
+            cm.log.n_del = 0;
             
             % everything is prepared now
             
             cm.b_prep = true;
             
-        end        
-          
+        end   
+        
     end
     
 end

@@ -13,7 +13,7 @@ par.T2 = 10;
 par.D = 3;
 par.TR = 5;
 par.fa = 30;
-par.dx_2pi = 20;
+par.dx_2pi = 125;
 par.n_max = 8;
 par.t_prep = 5;
 par.tensor = 'no';
@@ -80,7 +80,7 @@ while ( true )
     
     % constant gradient with 2 * pi dephasing per TR and dx_2pi
     
-    p_scal = 1 ./ par.dx_2pi;
+    p_scal = 2 * pi / par.dx_2pi;
     
     % gradient moment in random direction
     
@@ -218,7 +218,8 @@ while ( true )
         n = i - n_max - 1;
         
         param = [];
-        param.b_occ = cm_0.b_occ & ( abs( cm_0.tau - n * par.TR ) < 0.1 * par.TR );
+        param.occ = cm_0.occ & ...
+            abs( bsxfun( @minus, cm_0.tau, n * par.TR ) ) < 0.1 * par.TR;
         
         res = cm_0.sum( param );
         
@@ -226,7 +227,8 @@ while ( true )
         m_z_0( i ) = res.z;
         
         param = [];
-        param.b_occ = cm.b_occ & ( abs( cm.tau - n * par.TR ) < 0.1 * par.TR );
+        param.occ = cm.occ & ...
+            abs( bsxfun( @minus, cm.tau, n * par.TR ) ) < 0.1 * par.TR;
         
         res = cm.sum( param );
         

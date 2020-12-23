@@ -17,6 +17,8 @@ par.tau_max = 1.2;
 par.n_tau = 10;
 par.omega = 1;
 par.n_inter = 100;
+par.epsilon = 1e-6;
+par.verbose = 'False';
 
 opt.T1 = [];
 opt.T2 = [];
@@ -25,6 +27,8 @@ opt.tau_max = [];
 opt.n_tau = [];
 opt.omega = [];
 opt.n_inter = [];
+opt.epsilon = [];
+opt.verbose = { 'True', 'False' };
 
 str.T1 = '[ms] T1';
 str.T2 = '[ms] T2';
@@ -33,6 +37,8 @@ str.tau_max = '[ms] maximum duration between RF pulses.';
 str.n_tau = '[ms] allowed RF pulse spacing: linspace(tau_min,tau_max,n_tau)';
 str.omega = '[rad/ms] dephasing angle due to off-resonance (randomly chosen, if empty)';
 str.n_inter = 'number of RF pulses (separated by non-equidistant time intervals)';
+str.epsilon = 'discard configurations with L2 norm smaller than this (0 == max. accuracy)';
+str.verbose = 'provide some informal output';
 
 while ( true )
     
@@ -66,6 +72,18 @@ while ( true )
         
     end
     
+    % set verbosity
+    
+    if ( isequal( par.verbose, 'True' ) )
+        
+        verbose = true;
+        
+    else
+        
+        verbose = false;
+        
+    end
+ 
     %% initialize Bloch simulations
     
     % dephasing angle due to off-resonance, depending on the n_tau durations tau(:)
@@ -153,6 +171,22 @@ while ( true )
     cm.d_tau = d_tau;
     cm.n_tau = par.n_inter * par.tau_max / d_tau; % should be a safe choice
     
+    % accuracy, allocated space, verbosity
+    
+    cm.epsilon = par.epsilon;
+    
+    if ( par.epsilon ~= 0 )
+        
+        cm.alloc = round( 1.1 / par.epsilon );
+        
+    else
+        
+        cm.alloc = round( 1e7 );
+        
+    end
+    
+    cm.verbose = verbose;
+    
     %% other settings
     % timing
     
@@ -161,11 +195,6 @@ while ( true )
     % real valued magnetization (after RF pulse)
     
     m_cm = zeros( 3, par.n_inter );
-    
-    % total and fractional number of stored configurations
-    
-    occ = zeros( 1, par.n_inter );
-    fra = zeros( 1, par.n_inter );
     
     % absolute deviation from Bloch simulation
     
@@ -229,7 +258,7 @@ while ( true )
         
         % store time per TR
         
-        time_cm( i ) = toc;
+        %        time_cm( i ) = toc;
         
         % save results
         
@@ -241,226 +270,119 @@ while ( true )
         
         abs_err( i ) = sqrt( sum( abs( m_bloch( :, i ) - m_cm( :, i ) ).^2 ) );
         
-        % number of occupied (== stored) configurations in (p,tau) space
-        
-        [ o_, f_ ] = cm.n_conf;
-        occ( i ) = o_;
-        fra( i ) = f_( 4 ); % corresponding to the tau direction
-        
-        if ( mod( i, 10 ) == 0 || i == par.n_inter )
+        if ( i == par.n_inter )
             
-            % show occupied vs stored configurations during simulation
+            toc;
             
-            %             n_occ_ex = cm.n( cm.b_n, : );
-            %             i_occ_ex = n_occ_ex + [ ny0, nx0 ];
-            %
-            %             n_occ_ra = cm_rapid.n( cm_rapid.b_n, : );
-            %             i_occ_ra = n_occ_ra + [ ny0, nx0 ];
-            %
-            %             co = colormap( 'parula' );
-            %             co( 1, : ) = 0;
-            %
-            %             min_ = - 20;
-            %
-            %             m_occ_ex = log( abs( cm.m( 1, cm.b_n ) ) );
-            %             m_occ_ex( m_occ_ex <= min_ ) = min_ + 100 * eps;
-            %             m_ex( : ) = 0;
-            %             m_ex( sub2ind( N,  i_occ_ex( :, 1 ), i_occ_ex( :, 2 ) ) ) = m_occ_ex - min_;
-            %             m_ex = ceil( ( 63 / max( m_ex( : ) ) ) .* m_ex );
-            %             m_ex( end : -1 : 1, : ) = m_ex;
-            %
-            %             m_occ_ra = log( abs( cm_rapid.m( 1, cm_rapid.b_n ) ) );
-            %             m_occ_ra( m_occ_ra <= min_ ) = min_ + 100 * eps;
-            %             m_ra( : ) = 0;
-            %             m_ra( sub2ind( N,  i_occ_ra( :, 1 ), i_occ_ra( :, 2 ) ) ) = m_occ_ra - min_;
-            %             m_ra = ceil( ( 63 / max( m_ra( : ) ) ) .* m_ra );
-            %             m_ex( end : -1 : 1, : ) = m_ex;
-            
-        end
-            
-        if ( i < par.n_inter && mod( i, 10 ) == 0 )
-            
-            fprintf( 1, '%d / %d\n', i, par.n_inter );
-            
-            %             subplot( 1, 2, 1 );
-            %             imagesc( m_ex, [ 0, 64 ] );
-            %             title( 'occupied configurations' );
-            %             xticks( xticks_ );
-            %             xticklabels( xticklabels_ );
-            %             xlabel( '$n_1$', 'Interpreter', 'latex' );
-            %             yticks( yticks_ );
-            %             yticklabels( yticklabels_ );
-            %             ylabel( '$n_2$', 'Interpreter', 'latex' );
-            %
-            %             subplot( 1, 2, 2 );
-            %             imagesc( m_ra, [ 0, 64 ] );
-            %             title( 'stored configurations' );
-            %             xticks( xticks_ );
-            %             xticklabels( xticklabels_ );
-            %             xlabel( '$n_1$', 'Interpreter', 'latex' );
-            %             yticks( yticks_ );
-            %             yticklabels( yticklabels_ );
-            %             ylabel( '$n_2$', 'Interpreter', 'latex' );
-            %
-            %             colormap( co );
-            %
-            %             drawnow;
-            
-        elseif ( i == par.n_inter )
-
             % final plot for publication
             
             % some parameters
             
-            %             rng = ( - 10 : 0 ) + par.n_inter;
-            %
-            %             m_xy_bloch = m_bloch( 1, rng ) + 1i .* m_bloch( 2, rng );
-            %             m_xy_exact = m_cm( 1, rng ) + 1i .* m_cm( 2, rng );
-            %             m_xy_rapid = m_rapid( 1, rng  ) + 1i .* m_rapid( 2, rng );
-            %
-            %             abs_err = sqrt( sum( abs( m_cm - m_bloch ).^2, 1 ) );
-            %             abs_err_rapid = sqrt( sum( abs( m_rapid - m_bloch ).^2, 1 ) );
-            %
-            %             rng_tot = 1 : par.n_inter;
-            %
-            %             % now the plots
-            %
-            %             % size in [cm]
-            %
-            %             width = 18;
-            %             height = 12;
-            %
-            %             % #1
-            %
-            %             ax = subplot( 2, 3, 1 );
-            %
-            %             % needed once
-            %
-            %             set( gcf, 'Units', 'centimeters' );
-            %             set( gcf, 'Position', [ 0, 0, width, height ] );
-            %             set( gcf, 'Color', 'w' );
-            %
-            %             delta = 0.01;
-            %
-            %             %%
-            %
-            %             plot( rng_tot, alpha, '.', rng_tot, phase, '.' );
-            %             ylim( [ - pi, pi ] );
-            %             ang_ = [ - pi, - 0.5 * pi, 0, 0.5 * pi, pi ];
-            %             yticks( ang_ );
-            %             yticklabels( { '-\pi', '-\pi/2', '0', '\pi/2', '\pi' } ) %, 'Interpreter', 'latex' );
-            %             ylabel( '$\alpha_\nu, \varphi_\nu$', 'Interpreter', 'latex' );
-            %             xlabel( '$\nu$', 'Interpreter', 'latex' );
-            %             xlim( [ 0, par.n_inter ] );
-            %             legend( 'flip angle', 'phase', 'Interpreter', 'latex', 'Location', 'south' );
-            %
-            %             title( 'Random Sequence', 'Interpreter', 'latex' );
-            %
-            %             ti = ax.TightInset;
-            %             left = ti(1) + delta;
-            %             bottom = ti(2) + delta + 0.5;
-            %             ax_width = 0.3333 - ti(1) - ti(3) - 2 * delta;
-            %             ax_height = 0.5 - ti(2) - ti(4) - 2 * delta;
-            %             ax.Position = [left bottom ax_width ax_height ];
-            %
-            %             %%
-            %
-            %             % #2
-            %
-            %             ax = subplot( 2, 3, 2 );
-            %
-            %             plot( rng, abs( m_xy_bloch ), '+k', rng, abs( m_xy_exact ), 'b', rng, abs( m_xy_rapid ), 'r' );
-            %             xlabel( '$\nu$', 'Interpreter', 'latex' );
-            %             ylabel( '$\left|m_{xy}\right|$', 'Interpreter', 'latex' );
-            %             legend( 'Bloch', 'CM (exact)', 'CM (rapid)', 'Interpreter', 'latex', 'Location', 'best' );
-            %             title( 'Transverse Magnetization', 'Interpreter', 'latex' );
-            %
-            %             ti = ax.TightInset;
-            %             left = 0.3333 + ti(1) + delta;
-            %             bottom = ti(2) + delta + 0.5;
-            %             ax_width = 0.3333 - ti(1) - ti(3) - 2 * delta;
-            %             ax_height = 0.5 - ti(2) - ti(4) - 2 * delta;
-            %             ax.Position = [left bottom ax_width ax_height ];
-            %
-            %             % #3
-            %
-            %             ax = subplot( 2, 3, 3 );
-            %
-            %             semilogy( rng_tot, abs_err, rng_tot, abs_err_rapid );
-            %             xlim( [ 0 par.n_inter ] );
-            %             xlabel( '$\nu$', 'Interpreter', 'latex' );
-            %             ylabel( '$\left|\bf{\Delta m}\right|$', 'Interpreter', 'latex' );
-            %             legend( 'exact', 'rapid', 'Interpreter', 'latex', 'Location', 'east' );
-            %             title( 'Deviation from Bloch', 'Interpreter', 'latex' );
-            %
-            %             ti = ax.TightInset;
-            %             left = 0.6667 + ti(1) + delta;
-            %             bottom = ti(2) + delta + 0.5;
-            %             ax_width = 0.3333 - ti(1) - ti(3) - 2 * delta;
-            %             ax_height = 0.5 - ti(2) - ti(4) - 2 * delta;
-            %             ax.Position = [left bottom ax_width ax_height ];
-            %
-            %             % #4
-            %
-            %             ax = subplot( 2, 3, 4 );
-            %
-            %             semilogy( rng_tot, occ, rng_tot, n_conf_rapid );
-            %             xlim( [ 0 par.n_inter ] );
-            %             xlabel( '$\nu$', 'Interpreter', 'latex' );
-            %             ylabel( 'number', 'Interpreter', 'latex' );
-            %             legend( 'occupied', 'stored', 'Interpreter', 'latex', 'Location', 'south' );
-            %             title( 'Configurations', 'Interpreter', 'latex' );
-            %
-            %             ti = ax.TightInset;
-            %             left = ti(1) + delta;
-            %             bottom = ti(2) + delta;
-            %             ax_width = 0.3333 - ti(1) - ti(3) - 2 * delta;
-            %             ax_height = 0.5 - ti(2) - ti(4) - 2 * delta;
-            %             ax.Position = [left bottom ax_width ax_height ];
-            %
-            %             % #5
-            %
-            %             ax = subplot( 2, 3, 5 );
-            %
-            %             imagesc( m_ra, [ 0, 64 ] );
-            %             xticks( xticks_ );
-            %             xticklabels( xticklabels_ );
-            %             xlabel( '$n_1$', 'Interpreter', 'latex' );
-            %             yticks( yticks_ );
-            %             yticklabels( yticklabels_ );
-            %             ylabel( '$n_2$', 'Interpreter', 'latex' );
-            %             title( 'Stored Configurations', 'Interpreter', 'latex' );
-            %
-            %             ti = ax.TightInset;
-            %             left = 0.3333 + ti(1) + delta;
-            %             bottom = ti(2) + delta;
-            %             ax_width = 0.3333 - ti(1) - ti(3) - 2 * delta;
-            %             ax_height = 0.5 - ti(2) - ti(4) - 2 * delta;
-            %             ax.Position = [left bottom ax_width ax_height ];
-            %
-            %             % #6
-            %
-            %             ax = subplot( 2, 3, 6 );
-            %
-            %             plot( rng_tot, time_cm, rng_tot, time_rapid );
-            %             xlim( [ 0 par.n_inter ] );
-            %             xlabel( '$\nu$', 'Interpreter', 'latex' );
-            %             ylabel( '[ms]', 'Interpreter', 'latex' );
-            %             legend( 'exact', 'rapid', 'Interpreter', 'latex', 'Location', 'northwest' );
-            %             title( 'CPU Time / Interval', 'Interpreter', 'latex' );
-            %
-            %             ti = ax.TightInset;
-            %             left = 0.6667 + ti(1) + delta;
-            %             bottom = ti(2) + delta;
-            %             ax_width = 0.3333 - ti(1) - ti(3) - 2 * delta;
-            %             ax_height = 0.5 - ti(2) - ti(4) - 2 * delta;
-            %             ax.Position = [left bottom ax_width ax_height ];
-            %
-            %             colormap( co );
+            rng = ( - 10 : 0 ) + par.n_inter;
+            
+            m_xy_bloch = m_bloch( 1, rng ) + 1i .* m_bloch( 2, rng );
+            m_xy_cm = m_cm( 1, rng ) + 1i .* m_cm( 2, rng );
+            
+            abs_err = sqrt( sum( abs( m_cm - m_bloch ).^2, 1 ) );
+            
+            rng_tot = 1 : par.n_inter;
+            
+            % now the plots
+            
+            % size in [cm]
+            
+            width = 14;
+            height = 12;
+            
+            % #1
+            
+            ax = subplot( 2, 2, 1 );
+            
+            % needed once
+            
+            set( gcf, 'Units', 'centimeters' );
+            set( gcf, 'Position', [ 0, 0, width, height ] );
+            set( gcf, 'Color', 'w' );
+            
+            delta = 0.01;
+            
+            %%
+            
+            plot( rng_tot, alpha, '.', rng_tot, phase, '.' );
+            ylim( [ - pi, pi ] );
+            ang_ = [ - pi, - 0.5 * pi, 0, 0.5 * pi, pi ];
+            yticks( ang_ );
+            yticklabels( { '-\pi', '-\pi/2', '0', '\pi/2', '\pi' } ) %, 'Interpreter', 'latex' );
+            ylabel( '$\alpha_\nu, \varphi_\nu$', 'Interpreter', 'latex' );
+            xlabel( '$\nu$', 'Interpreter', 'latex' );
+            xlim( [ 0, par.n_inter ] );
+            legend( 'flip angle', 'phase', 'Interpreter', 'latex', 'Location', 'south' );
+            
+            title( 'Random Sequence', 'Interpreter', 'latex' );
+            
+            ti = ax.TightInset;
+            left = ti(1) + delta;
+            bottom = ti(2) + delta + 0.5;
+            ax_width = 0.5 - ti(1) - ti(3) - 2 * delta;
+            ax_height = 0.5 - ti(2) - ti(4) - 2 * delta;
+            ax.Position = [left bottom ax_width ax_height ];
+            
+            %%
+            
+            % #2
+            
+            ax = subplot( 2, 2, 2 );
+            
+            plot( rng, abs( m_xy_bloch ), '+k', rng, abs( m_xy_cm ), 'b' );
+            xlabel( '$\nu$', 'Interpreter', 'latex' );
+            ylabel( '$\left|m_{xy}\right|$', 'Interpreter', 'latex' );
+            legend( 'Bloch', 'CM (exact)', 'Interpreter', 'latex', 'Location', 'best' );
+            title( 'Transverse Magnetization', 'Interpreter', 'latex' );
+            
+            ti = ax.TightInset;
+            left = 0.5 + ti(1) + delta;
+            bottom = ti(2) + delta + 0.5;
+            ax_width = 0.5 - ti(1) - ti(3) - 2 * delta;
+            ax_height = 0.5 - ti(2) - ti(4) - 2 * delta;
+            ax.Position = [left bottom ax_width ax_height ];
+            
+            % #3
+            
+            ax = subplot( 2, 2, 3 );
+            
+            semilogy( rng_tot, abs_err );
+            xlim( [ 0 par.n_inter ] );
+            xlabel( '$\nu$', 'Interpreter', 'latex' );
+            ylabel( '$\left|\bf{\Delta m}\right|$', 'Interpreter', 'latex' );
+            title( 'Deviation from Bloch', 'Interpreter', 'latex' );
+            
+            ti = ax.TightInset;
+            left = ti(1) + delta;
+            bottom = ti(2) + delta;
+            ax_width = 0.5 - ti(1) - ti(3) - 2 * delta;
+            ax_height = 0.5 - ti(2) - ti(4) - 2 * delta;
+            ax.Position = [left bottom ax_width ax_height ];
+            
+            % #4
+            
+            ax = subplot( 2, 2, 4 );
+            
+            semilogy( cm.log.t, cm.log.n_occ, cm.log.t, cm.log.n_del );
+            xlim( [ 0 max( cm.log.t ) ] );
+            xlabel( '$\nu$', 'Interpreter', 'latex' );
+            ylabel( 'number', 'Interpreter', 'latex' );
+            legend( 'stored', 'deleted', 'Interpreter', 'latex', 'Location', 'best' );
+            title( 'Configurations', 'Interpreter', 'latex' );
+            
+            ti = ax.TightInset;
+            left = ti(1) + 0.5 + delta;
+            bottom = ti(2) + delta;
+            ax_width = 0.5 - ti(1) - ti(3) - 2 * delta;
+            ax_height = 0.5 - ti(2) - ti(4) - 2 * delta;
+            ax.Position = [left bottom ax_width ax_height ];
             
         end
-        
+
     end
-    
-    
+        
 end

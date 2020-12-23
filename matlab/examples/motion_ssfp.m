@@ -21,6 +21,7 @@ par.resolution = 1000;
 par.v_max = 120;
 par.n_v = 20;
 par.t_prep = 5;
+par.epsilon = 1e-6;
 
 opt.T1 = [];
 opt.T2 = [];
@@ -31,6 +32,7 @@ opt.resolution = [];
 opt.v_max = [];
 opt.n_v = [];
 opt.t_prep = [];
+opt.epsilon = [];
 
 str.T1 = '[ms] set of T1 values';
 str.T2 = '[ms] set of T2 values';
@@ -41,6 +43,7 @@ str.resolution = '[um] voxel size (relevant for the moment of the 2 * pi crusher
 str.v_max = '[mm/s] maximum (absolute) velocity component in direction of crusher';
 str.n_v = 'number of velocities in the range [ 0, v_max ]';
 str.t_prep = 'duration of preparation phase in units of T1';
+str.epsilon = 'discard configurations with L2 norm smaller than this (0 == max. accuracy)';
 
 while ( true )
     
@@ -139,6 +142,10 @@ while ( true )
             cm.d_tau = par.TR;
             cm.n_tau = n_TR;
 
+            % set desired accuracy
+            
+            cm.epsilon = par.epsilon;
+            
             %% approach steady state
             
             for i_TR = 1 : n_TR
@@ -156,7 +163,7 @@ while ( true )
                     % since the signal from nonzero orders is (hopefully) dephased
                     
                     sel_conf = [];
-                    sel_conf.b_occ = cm.b_occ & ( abs( cm.p{ 1 } ) < 0.1 * pc( 1 ) );
+                    sel_conf.occ = cm.occ & ( abs( cm.p( 1, : ) ) < 0.1 * pc( 1 ) );
                     
                     % calculate the partial sum
                     
