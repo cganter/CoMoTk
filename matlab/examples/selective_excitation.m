@@ -52,7 +52,7 @@ while ( true )
         
     end
         
-    % convert to units, as expected by CoMoTk
+    % convert to units, as expected by CoMo
     
     alpha_rad = par.fa * pi / 180;
     sl_th_um = 1000 * par.sl_th;
@@ -125,7 +125,7 @@ while ( true )
     
     %% initialize configuration model
     
-    cm = CoMoTk;
+    cm = CoMo;
     
     % mandatory tissue parameters
     
@@ -133,16 +133,14 @@ while ( true )
     cm.R2 = 1 / par.T2;
     cm.D = par.D;
     
-    % allocated support in configuration space
+    % configuration space resolution
     
     cm.d_tau = tau_rf;
-    cm.n_tau = par.supp_rf;
     cm.d_p = p_rf;
-    cm.n_p = [ 0; 0; par.supp_rf ];
     
     %% calculate SLR profile
     
-    % Eq. (ll)
+    % Eq. (11)
     
     C = cos( 0.5 .* alpha );
     S = 1i .* sin( 0.5 .* alpha );
@@ -230,7 +228,7 @@ while ( true )
     xlim( [ - 0.5 * par.t_rf 0.5 * par.t_rf ] );
     ylim( [ min( alpha ./ max( alpha ) ) - 0.05, 1.05 ] );
     xlabel( '$t$ [ms]', 'Interpreter', 'latex' );
-    ylabel( '$\alpha_\nu/\alpha_{nom}$', 'Interpreter', 'latex' );
+    ylabel( '$\alpha_j/\alpha_{nom}$', 'Interpreter', 'latex' );
     title( 'RF Pulse', 'Interpreter', 'latex' );
 
     width = 18;

@@ -52,7 +52,7 @@ while ( true )
         
     end
     
-    % convert to units, as expected by CoMoTk
+    % convert to units, as expected by CoMo
     
     fa_exc_rad = par.fa_exc * pi / 180;
     fa_ref_rad = par.fa_ref * pi / 180;
@@ -70,8 +70,8 @@ while ( true )
         
     %% initialize configuration model (idealized sequence)
     
-    cm_cpmg = CoMoTk;
-    cm_no_cpmg = CoMoTk;
+    cm_cpmg = CoMo;
+    cm_no_cpmg = CoMo;
     
     % mandatory tissue parameters
     
@@ -83,17 +83,13 @@ while ( true )
     cm_no_cpmg.R2 = 1 / par.T2;
     cm_no_cpmg.D = par.D;
     
-    % allocated support in configuration space
+    % configuration space resolution
     
     cm_cpmg.d_p = p_te;
-    cm_cpmg.n_p = [ 2 * par.n_echoes, 0, 0 ];
     cm_cpmg.d_tau = tau_te;
-    cm_cpmg.n_tau = 2 * par.n_echoes;
     
     cm_no_cpmg.d_p = p_te;
-    cm_no_cpmg.n_p = [ 2 * par.n_echoes, 0, 0 ];
     cm_no_cpmg.d_tau = tau_te;
-    cm_no_cpmg.n_tau = 2 * par.n_echoes;
     
     % further parameters
     

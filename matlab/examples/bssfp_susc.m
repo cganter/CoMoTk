@@ -53,7 +53,7 @@ while ( true )
     
     % create instance
     
-    cm = CoMoTk;
+    cm = CoMo;
     
     % mandatory tissue parameters
     
@@ -61,10 +61,13 @@ while ( true )
     cm.R2 = 1 / par.T2;
     cm.D = 0;
     
-    % spin memory defines the conservative support in configuration space
+    % configuration space resolution
     
     cm.d_tau = tau;
-    cm.n_tau = round( par.dummy * par.T1 / tau );
+    
+    % accuracy
+    
+    cm.epsilon = 1e-5;
     
     % RF parameters 
         

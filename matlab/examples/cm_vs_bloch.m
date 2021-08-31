@@ -1,4 +1,4 @@
-%% Comparison CoMoTk vs Bloch simulation for a random RF train
+%% Comparison CoMo vs Bloch simulation for a random RF train
 % 
 % - no gradients, i.e. all magnetization pathways contribute
 % - flip angle and phases randomized for each RF pulse
@@ -16,8 +16,8 @@ par.tau_min = 0.8;
 par.tau_max = 1.2;
 par.n_tau = 10;
 par.omega = 1;
-par.n_inter = 100;
-par.epsilon = 1e-6;
+par.n_inter = 500;
+par.epsilon = 1e-5;
 par.verbose = 'False';
 
 opt.T1 = [];
@@ -34,11 +34,11 @@ str.T1 = '[ms] T1';
 str.T2 = '[ms] T2';
 str.tau_min = '[ms] minimum duration between RF pulses.';
 str.tau_max = '[ms] maximum duration between RF pulses.';
-str.n_tau = '[ms] allowed RF pulse spacing: linspace(tau_min,tau_max,n_tau)';
+str.n_tau = '[ms] number of different RF pulse spacings: linspace(tau_min,tau_max,n_tau)';
 str.omega = '[rad/ms] dephasing angle due to off-resonance (randomly chosen, if empty)';
 str.n_inter = 'number of RF pulses (separated by non-equidistant time intervals)';
 str.epsilon = 'discard configurations with L2 norm smaller than this (0 == max. accuracy)';
-str.verbose = 'provide some informal output';
+str.verbose = 'provide some informal output (stored and deleted configurations)';
 
 while ( true )
     
@@ -54,7 +54,16 @@ while ( true )
     
     n_tau = par.n_tau;
     tau = linspace( par.tau_min, par.tau_max, n_tau );
-    d_tau = tau( 2 ) - tau( 1 );
+
+    if ( length( tau ) > 1 )
+        
+        d_tau = tau( 2 ) - tau( 1 );
+        
+    else
+        
+        d_tau = tau( 1 );
+        
+    end
     
     % off-resonance frequency
     
@@ -156,7 +165,7 @@ while ( true )
     
     % create instance
     
-    cm = CoMoTk;
+    cm = CoMo;
     
     % mandatory tissue parameters
     
@@ -164,27 +173,14 @@ while ( true )
     cm.R2 = 1 / par.T2;
     cm.D = 0;
       
-    % support in (p,tau) space
-    % no gradients are applied, therefore we only need to set the time
-    % dimension
+    % resolution of (p,tau) space
+    % no gradients are applied, therefore we only need to set the time dimension
     
     cm.d_tau = d_tau;
-    cm.n_tau = par.n_inter * par.tau_max / d_tau; % should be a safe choice
     
     % accuracy, allocated space, verbosity
     
-    cm.epsilon = par.epsilon;
-    
-    if ( par.epsilon ~= 0 )
-        
-        cm.alloc = round( 1.1 / par.epsilon );
-        
-    else
-        
-        cm.alloc = round( 1e7 );
-        
-    end
-    
+    cm.epsilon = par.epsilon;        
     cm.verbose = verbose;
     
     %% other settings
@@ -210,11 +206,15 @@ while ( true )
 
     if ( omega ~= 0 )
         
-        sum_par.omega = omega;
+        sum_par.omega = omega;        
     
     end
         
     %% start actual calculations
+
+    % start timing
+        
+    tic;
     
     for i = 1 : par.n_inter
     
@@ -239,10 +239,6 @@ while ( true )
         
         Time_par = [];
         Time_par.tau = tau( i_tau( i ) );
-        
-        % execute sequence
-        
-        tic;
         
         % execute RF pulse
         
@@ -271,6 +267,8 @@ while ( true )
         abs_err( i ) = sqrt( sum( abs( m_bloch( :, i ) - m_cm( :, i ) ).^2 ) );
         
         if ( i == par.n_inter )
+
+            % stop timing
             
             toc;
             
@@ -278,7 +276,7 @@ while ( true )
             
             % some parameters
             
-            rng = ( - 10 : 0 ) + par.n_inter;
+            rng = ( - min( 10, par.n_inter - 1 ) : 0 ) + par.n_inter;
             
             m_xy_bloch = m_bloch( 1, rng ) + 1i .* m_bloch( 2, rng );
             m_xy_cm = m_cm( 1, rng ) + 1i .* m_cm( 2, rng );
@@ -313,8 +311,8 @@ while ( true )
             ang_ = [ - pi, - 0.5 * pi, 0, 0.5 * pi, pi ];
             yticks( ang_ );
             yticklabels( { '-\pi', '-\pi/2', '0', '\pi/2', '\pi' } ) %, 'Interpreter', 'latex' );
-            ylabel( '$\alpha_\nu, \varphi_\nu$', 'Interpreter', 'latex' );
-            xlabel( '$\nu$', 'Interpreter', 'latex' );
+            ylabel( '$\alpha_j, \varphi_j$', 'Interpreter', 'latex' );
+            xlabel( '$j$', 'Interpreter', 'latex' );
             xlim( [ 0, par.n_inter ] );
             legend( 'flip angle', 'phase', 'Interpreter', 'latex', 'Location', 'south' );
             
@@ -334,9 +332,9 @@ while ( true )
             ax = subplot( 2, 2, 2 );
             
             plot( rng, abs( m_xy_bloch ), '+k', rng, abs( m_xy_cm ), 'b' );
-            xlabel( '$\nu$', 'Interpreter', 'latex' );
+            xlabel( '$j$', 'Interpreter', 'latex' );
             ylabel( '$\left|m_{xy}\right|$', 'Interpreter', 'latex' );
-            legend( 'Bloch', 'CM (exact)', 'Interpreter', 'latex', 'Location', 'best' );
+            legend( 'Bloch', 'CM', 'Interpreter', 'latex', 'Location', 'best' );
             title( 'Transverse Magnetization', 'Interpreter', 'latex' );
             
             ti = ax.TightInset;
@@ -352,7 +350,7 @@ while ( true )
             
             semilogy( rng_tot, abs_err );
             xlim( [ 0 par.n_inter ] );
-            xlabel( '$\nu$', 'Interpreter', 'latex' );
+            xlabel( '$j$', 'Interpreter', 'latex' );
             ylabel( '$\left|\bf{\Delta m}\right|$', 'Interpreter', 'latex' );
             title( 'Deviation from Bloch', 'Interpreter', 'latex' );
             
@@ -369,7 +367,7 @@ while ( true )
             
             semilogy( cm.log.t, cm.log.n_occ, cm.log.t, cm.log.n_del );
             xlim( [ 0 max( cm.log.t ) ] );
-            xlabel( '$\nu$', 'Interpreter', 'latex' );
+            xlabel( '$j$', 'Interpreter', 'latex' );
             ylabel( 'number', 'Interpreter', 'latex' );
             legend( 'stored', 'deleted', 'Interpreter', 'latex', 'Location', 'best' );
             title( 'Configurations', 'Interpreter', 'latex' );

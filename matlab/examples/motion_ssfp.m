@@ -12,8 +12,8 @@ par = [];
 opt = [];
 str = [];
 
-par.T1 = [ 100, 200 ];
-par.T2 = [ 50, 100 ];
+par.T1 = [ 100, 500 ];
+par.T2 = [ 50, 250 ];
 par.D = 0;
 par.TR = 5;
 par.fa = 90;
@@ -67,7 +67,7 @@ while ( true )
         
     end
         
-    % convert to units, as expected by CoMoTk
+    % convert to units, as expected by CoMo
     
     fa_rad = par.fa * pi / 180;
     
@@ -127,7 +127,7 @@ while ( true )
             
             %% initialize configuration model (idealized sequence)
             
-            cm = CoMoTk;        % create instance
+            cm = CoMo;        % create instance
             
             % mandatory tissue parameters
             
@@ -135,12 +135,10 @@ while ( true )
             cm.R2 = 1 / par.T2( i_Tx );
             cm.D = par.D;
             
-            % allocated support in configuration space
+            % configuration space resolution
             
             cm.d_p = pc;
-            cm.n_p = [ n_TR; 0; 0 ];
             cm.d_tau = par.TR;
-            cm.n_tau = n_TR;
 
             % set desired accuracy
             

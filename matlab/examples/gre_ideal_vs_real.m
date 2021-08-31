@@ -19,7 +19,7 @@ par.t_rf = 1;
 par.supp_rf = 50;
 par.qual_rf = 1 : 3;
 par.filt_rf = 'Hamming';
-par.epsilon = 1e-4;
+par.epsilon = 1e-5;
 
 opt.T1 = [];
 opt.T2 = [];
@@ -62,10 +62,10 @@ while ( true )
     % phase cycling
     
     ph_rad = zeros( par.num_TR, 1 );
-    ph_rad( 2 : 2 : end ) = pi;
+    % ph_rad( 2 : 2 : end ) = pi;
     
     %% apply settings
-    % convert to units, as expected by CoMoTk
+    % convert to units, as expected by CoMo
     
     fa_rad = par.fa * pi / 180;
     sl_th_um = 1000 * par.sl_th;
@@ -87,7 +87,7 @@ while ( true )
     %% ideal sequence with instantaneous RF pulses
     % initialize configuration model
 
-    cm_ideal = CoMoTk;
+    cm_ideal = CoMo;
     
     % mandatory tissue parameters
     
@@ -95,10 +95,9 @@ while ( true )
     cm_ideal.R2 = 1 / par.T2;
     cm_ideal.D = 0;
     
-    % allocated support in configuration space
+    % in configuration space resolution
     
     cm_ideal.d_tau = TE;
-    cm_ideal.n_tau = 2 * par.num_TR;
     
     % define accuracy
     
@@ -273,7 +272,7 @@ while ( true )
             
         %% initialize configuration model (real sequence)
         
-        cm_real = CoMoTk;
+        cm_real = CoMo;
         
         % mandatory tissue parameters
         
@@ -285,14 +284,10 @@ while ( true )
     
         cm_real.epsilon = par.epsilon;
         
-        % allocated support in configuration space
+        % configuration space resolution
         
         cm_real.d_tau = DeltaTime.tau;
-        cm_real.n_tau = 1e3;
-        %        cm_real.n_tau = 2 * num_TR * round( par.TR / DeltaTime.tau );
         cm_real.d_p = DeltaTime.p;
-        %        cm_real.n_p = [ 0; 0; par.supp_rf * 2 * num_TR ];
-        cm_real.n_p = [ 0; 0; 1e3 ];
         
         %% initialize timing
         
@@ -374,8 +369,6 @@ while ( true )
             
             fprintf( 1, 'real RF  = %9.3f sec\n', t_re( idx_TR ) );
             
-            return;
-        
         end
         
         fprintf( 1, 'real RF  =\t %9.3f sec total\n', sum( t_re ) );
@@ -384,30 +377,13 @@ while ( true )
     
     %% Show results
 
-    if ( isequal( par.ssfp, 'unbalanced' ) )
+    te = par.TR / 2 + ( 0 : par.num_TR - 1 )' .* par.TR;
         
-        te = par.TE + ( 0 : par.num_TR - 1 )' .* par.TR;
-        
-    else
-        
-        te = par.TR / 2 + ( 0 : par.num_TR - 1 )' .* par.TR;
-        
-    end
-   
     %%
     
-    if ( isequal( par.ssfp, 'unbalanced' ) )
+    m_ideal = imag( m_ideal );
+    m_real = imag( m_real );
 
-        m_ideal = abs( m_ideal );
-        m_real = abs( m_real );
-        
-    else
-        
-        m_ideal = imag( m_ideal );
-        m_real = imag( m_real );
-
-    end
-        
     loc = x( 3, : ) .* 0.001;
     
     %%
@@ -436,15 +412,7 @@ while ( true )
     xlim( [ 0, te( end ) ] );
     ylim( [ -1.15, 0.7 ] );
     
-    if ( isequal( par.ssfp, 'unbalanced' ) )
-        
-        title( 'SSFP', 'Interpreter', 'latex' );
-        
-    elseif ( isequal( par.ssfp, 'balanced' ) )
-        
-        title( 'Transient bSSFP Oscillations', 'Interpreter', 'latex' );
-        
-    end
+    title( 'Transient bSSFP Oscillations', 'Interpreter', 'latex' );
         
     width = 14;
     height = 7.5;

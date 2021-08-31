@@ -72,7 +72,7 @@ while ( true )
     
     num_TR = ceil( par.t_prep * par.T1 / par.TR );
     
-    % convert to units, as expected by CoMoTk
+    % convert to units, as expected by CoMo
     
     fa_rad = par.fa * pi / 180;
     
@@ -96,8 +96,8 @@ while ( true )
     
     %% initialize configuration model (idealized sequence)
 
-    cm_0 = CoMoTk;      % without diffusion 
-    cm = CoMoTk;        % with diffusion
+    cm_0 = CoMo;      % without diffusion 
+    cm = CoMo;        % with diffusion
     
     % mandatory tissue parameters
     
@@ -108,20 +108,13 @@ while ( true )
     cm.R1 = 1 / par.T1;
     cm.R2 = 1 / par.T2;
     
-    % allocated support in configuration space
+    % configuration space resolution
 
-    n_p = zeros( 3, 1 );
-    n_p( ip ) = num_TR;
-    
     cm_0.d_p = p;
-    cm_0.n_p = n_p;
     cm_0.d_tau = par.TR;
-    cm_0.n_tau = num_TR;
     
     cm.d_p = p;
-    cm.n_p = n_p;
     cm.d_tau = par.TR;
-    cm.n_tau = num_TR;
     
     % calculate diffusion coefficient / tensor
     

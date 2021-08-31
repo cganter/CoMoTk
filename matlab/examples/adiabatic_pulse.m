@@ -76,9 +76,9 @@ while ( true )
         
     %% initialize configuration model
     
-    cm_HS1 = CoMoTk;
-    cm_HS1_0 = CoMoTk;
-    cm_Chirp_0 = CoMoTk;
+    cm_HS1 = CoMo;
+    cm_HS1_0 = CoMo;
+    cm_Chirp_0 = CoMo;
     
     % mandatory tissue parameters
     
@@ -94,14 +94,11 @@ while ( true )
     cm_Chirp_0.R2 = 0;
     cm_Chirp_0.D = 0;
     
-    % allocated support in configuration space
+    % configuration space resolution
     
     cm_HS1.d_tau = dt;
-    cm_HS1.n_tau = n_rf;
     cm_HS1_0.d_tau = dt;
-    cm_HS1_0.n_tau = n_rf;
     cm_Chirp_0.d_tau = dt;
-    cm_Chirp_0.n_tau = n_rf;
 
     % allocate space for transverse and longitudinal magnetization during the RF pulse
    

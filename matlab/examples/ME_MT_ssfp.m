@@ -97,23 +97,19 @@ while ( true )
 
     %% set up configuration model
     
-    ME_cm0 = CoMoTk;            % uncoupled spins
-    ME_cm = CoMoTk;             % with ME or MT
+    ME_cm0 = CoMo;            % uncoupled spins
+    ME_cm = CoMo;             % with ME or MT
 
-    MT_cm0 = CoMoTk;            % uncoupled spins
-    MT_cm = CoMoTk;             % with ME or MT
+    MT_cm0 = CoMo;            % uncoupled spins
+    MT_cm = CoMo;             % with ME or MT
     
-    % allocated support in configuration space
+    % configuration space resolution
     
     ME_cm0.d_tau = par.TR;
-    ME_cm0.n_tau = num_TR;
     ME_cm.d_tau = par.TR;
-    ME_cm.n_tau = num_TR;
 
     MT_cm0.d_tau = par.TR;
-    MT_cm0.n_tau = num_TR;
     MT_cm.d_tau = par.TR;
-    MT_cm.n_tau = num_TR;
 
     % mandatory tissue parameters
     
@@ -149,17 +145,14 @@ while ( true )
     % only off-diagonal elements need to be specified, the diagonal element
     % are determined by the sum rule related to particle conservation
     
-    ME_cm.k = [ 0, in.ME_kb; in.ME_ka, 0 ];
-    
+    ME_cm.k = [ 0, in.ME_kb; in.ME_ka, 0 ];    
     MT_cm.k = [ 0, in.MT_kb; in.MT_ka, 0 ];
     
     %% prepare time between two RF pulses
     
-    % unique index
-    
-    lam_t = 1;
-    
     %% approach steady state
+    
+    f = waitbar( 0, 'Approach steady-state' );
     
     for i = 0 : num_TR
         
@@ -192,7 +185,11 @@ while ( true )
         MT_cm0.RF( param );
         MT_cm.RF( param );
 
+        waitbar( i / num_TR, f, 'Approach steady-state' );
+        
     end
+
+    close( f );
     
     %% get and compare results
     

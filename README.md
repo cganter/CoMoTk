@@ -1,81 +1,62 @@
 
 
-# Configuration Model Toolkit
+# Background
+
+The continuous configuration model (CCM) (link follows) constitutes a representation
+of arbitrary magnetic resonance imaging (MRI) sequences and tissues, which allows for
+a rigorous and transparent treatment of signal localization by
+selective excitation and/or spatial encoding.
+
+The configuration model toolkit (CoMoTk), specifically the Matlab class `CoMo`, implements the CCM
+for Bloch-Torrey and Bloch-McConnell equations.
+The `examples/` folder contains all scripts needed to reproduce the results from the article and
+the associated supporting information.
 
 
-## Background
-
-The simulation of sequences or sequence blocks is a recurrent task in magnetic resonance imaging (MRI).
-How the calculation is actually performed, is highly variable and requires a decision about the desired degree of realism.
-
-The following non-exhaustive list shows a few possible options and alternatives:
-
--   RF pulses 
-    -   constant flip angles vs. slice profile
-    -   instantaneous vs. finite duration
-    -   RF pulse design
--   gradients
-    -   ideal vs. real crusher gradients (suppression of unwanted echoes)
-    -   gradient shapes
-    -   eddy currents
--   tissues
-    -   pure vs. mixture (e.g. water/fat)
-    -   bulk off-resonance
-    -   susceptibility effects
-    -   diffusion effects (isotropic, directional)
-    -   bulk motion
-    -   magnetization exchange/transfer
--   sequence
-    -   periodic vs. non-periodic
-    -   transient phase vs. steady-state
-
-`CoMoTk` is a general purpose simulation tool (currently implemented in Matlab), designed to handle essentially all the 
-aforementioned cases. 
-It is based upon a multidimensional version of the configuration model (CM), which will be described elsewhere (link will be
-provided as soon as available).
-
-
-## Installation
+# Installation
 
 Just add the `matlab/` folder with subdirectories to your Matlab path.
 
 **Important**: A Matlab version of **R2016b** or later is required, since implicit expansion is used a lot.
 
 
-## Releases
+# Small Example
 
-To supplement the submission of the background article about the CM, a packaged, citable version of CoMoTk has been created:
-
-[![img](https://zenodo.org/badge/DOI/10.5281/zenodo.4022354.svg)](https://doi.org/10.5281/zenodo.4022354) (v0.42 - Sept. 2020)
-
-
-## Small Example
-
-The following example should give a first impression of how to work with the matlab toolkit with some more details provided in
-the [User Guide](doc/CoMoTk_matlab.pdf). It is also highly recommended to look at the scripts in the `examples` folder, which cover typical application 
-scenarios and may serve as templates for own projects. To make full use of the toolkit, it is important to understand the theory 
-behind the configuration model, which will be presented in an article (link will be given, as soon as available).
+The following example should give a first impression of how to work with the toolkit.
+Further information is provided in the documented code and the scripts in the `examples/` folder cover typical application 
+scenarios. To fully benefit from the toolkit, it is indispensable to take a closer look at the linked article though.
 
     % Example: sample FID of SSFP during transient phase 
+    % sequence and tissue parameters
+    TR = 1;                         % repetition time [ms]
+    TE = 0.1;                       % echo time [ms]
+    flip_angle = pi / 2;            % flip angle [rad]
+    phase = 0;                      % phase [rad]
+    
+    T1 = 100;                       % longitudinal relaxation time [ms]
+    T2 = 10;                        % transverse relaxation time [ms]
+    D = 0;                          % we neglect diffusion in this example
     
     % initialize class
-    cm = CoMoTk;      
+    cm = CoMo;      
     
     % set tissue parameters
-    cm.R1 = R1;                     % longitudinal relaxation rate
-    cm.R2 = R2;                     % transverse relaxation rate
-    cm.D = 0;                       % we neglect diffusion in this example
+    cm.R1 = 1 / T1;                 % longitudinal relaxation rate [1/ms]
+    cm.R2 = 1 / T2;                 % transverse relaxation rate [1/ms]
+    cm.D = D;                       % diffusion constant [um^2/ms]
+    
+    % discretization of configuration space
+    % (ideally the greatest common divisor of all time intervals and/or gradient moments)
+    cm.d_tau = TE;
     
     % set RF pulse parameters
     rf.FlipAngle = flip_angle;      % flip angle [rad]
     rf.Phase = phase;               % phase [rad]
     
     % set time interval from RF pulse to echo
-    te.lambda = 1;                  % unique index of time interval
     te.tau = TE;                    % duration
     
     % set time interval from echo to RF pulse (includes crusher)
-    crusher.lambda = 2;             % unique index of time interval
     crusher.tau = TR - TE;          % duration
     
     % desired number of samples
@@ -87,93 +68,42 @@ behind the configuration model, which will be presented in an article (link will
     % execute sequence loop
     for i = 1 : n_TR                
     
-      % RF pulse
-      cm.RF( rf );                  
+      cm.RF( rf );                  % RF pulse
     
-      % time to echo
-      cm.time( te );               
+      cm.time( te );                % time to echo
     
-      % only magnetization pathways with no (0) dephasing by crushers contribute to the FID signal:
-      fid.b_n = cm.find( crusher, 0 );
+      % only magnetization pathways with no dephasing by crushers contribute to the FID signal.
+      % this corresponds to cm.tau == 0, as explained in the article, linked above. 
+      % to avoid possible rounding problems, we replace the condition cm.tau == 0 by a more robust one.
     
-      % extract result
-      res = cm.sum( fid );
+      fid = [];
+      fid.b_n = cm.occ & ( abs( cm.tau ) < 0.1 * cm.d_tau );   % cm.occ denotes occupied configurations
     
-      % store transverse magnetization
-      m_xy( i ) = res.xy;
+      res = cm.sum( fid );          % extract FID
+      m_xy( i ) = res.xy;           % store transverse component
     
-      % time to next RF pulse (includes crusher)
-      cm.time( crusher );           
+      cm.time( crusher );           % time to next RF pulse (assumed to include a crusher gradient)
     
     end
     % done
 
 
-## Current State
+# Please Note
 
-The following table gives a brief overview on the actual state:
-
-<table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
-
-
-<colgroup>
-<col  class="org-left" />
-
-<col  class="org-left" />
-
-<col  class="org-left" />
-</colgroup>
-<thead>
-<tr>
-<th scope="col" class="org-left">What</th>
-<th scope="col" class="org-left">Implemented</th>
-<th scope="col" class="org-left">Tested</th>
-</tr>
-</thead>
-
-<tbody>
-<tr>
-<td class="org-left">Bloch equations</td>
-<td class="org-left">yes</td>
-<td class="org-left">yes</td>
-</tr>
+CoMoTk constitutes a proof-of-concept implementation of the CCM.
+Its numerical performance is limited, as it only supports single-core computation.
+For serious projects consider porting it to a parallel architecture, since the time-consuming
+part of the CCM iterations will benefit from it. 
 
 
-<tr>
-<td class="org-left">Diffusion</td>
-<td class="org-left">yes</td>
-<td class="org-left">yes</td>
-</tr>
+# Releases
+
+To supplement the submission of the background article about the CCM, a packaged, citable version of CoMoTk has been created:
+
+[![img](https://zenodo.org/badge/DOI/10.5281/zenodo.4022354.svg)](https://doi.org/10.5281/zenodo.4022354) (v0.42 - Sept. 2020)
 
 
-<tr>
-<td class="org-left">Magnetization transfer/exchange</td>
-<td class="org-left">yes</td>
-<td class="org-left">yes</td>
-</tr>
-
-
-<tr>
-<td class="org-left">Bulk motion</td>
-<td class="org-left">yes</td>
-<td class="org-left">yes</td>
-</tr>
-
-
-<tr>
-<td class="org-left">Derivatives</td>
-<td class="org-left">partly</td>
-<td class="org-left">yes</td>
-</tr>
-</tbody>
-</table>
-
-**Please note:** The current proof-of-concept implementation only supports single CPU core computation and the simulation of more involved
-sequences may become rather slow. This is not a fundamental limitation, since the time-consuming part of the CM iteration 
-fully benefits from parallel computation. This limitation will be (hopefully) addressed in some future implementation.
-
-
-## Feedback
+# Feedback
 
 Please use the [issue tracker](https://github.com/cganter/CoMoTk/issues) or write an email to [comotk.rad.med@tum.de](mailto:comotk.rad.med@tum.de).
 
