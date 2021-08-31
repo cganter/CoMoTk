@@ -100,7 +100,7 @@ part of the CCM iterations will benefit from it.
 
 To supplement the submission of the background article about the CCM, a packaged, citable version of CoMoTk has been created:
 
-![img](https://zenodo.org/badge/DOI/10.5281/zenodo.5347194.svg) (v0.43 - Aug. 2021)
+[![img](https://zenodo.org/badge/DOI/10.5281/zenodo.5347194.svg)](https://doi.org/10.5281/zenodo.5347194) (v0.43 - Aug. 2021)
 
 
 # Feedback
