@@ -45,7 +45,7 @@ scenarios. To fully benefit from the toolkit, it is indispensable to take a clos
     cm.R2 = 1 / T2;                 % transverse relaxation rate [1/ms]
     cm.D = D;                       % diffusion constant [um^2/ms]
     
-    % gradient moment of crusher gradient
+    % crusher gradient moment
     
     p_c = 1;
     p_crusher = [ p_c; 0; 0 ];      % since we neglect diffusion,
