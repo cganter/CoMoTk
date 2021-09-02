@@ -45,9 +45,16 @@ scenarios. To fully benefit from the toolkit, it is indispensable to take a clos
     cm.R2 = 1 / T2;                 % transverse relaxation rate [1/ms]
     cm.D = D;                       % diffusion constant [um^2/ms]
     
+    % gradient moment of crusher gradient
+    
+    p_c = 1;
+    p_crusher = [ p_c; 0; 0 ];      % since we neglect diffusion,
+                                    % it only matters that it is nonzero
+    
     % discretization of configuration space
     % (ideally the greatest common divisor of all time intervals and/or gradient moments)
     cm.d_tau = TE;
+    cm.d_p = p_crusher;
     
     % set RF pulse parameters
     rf.FlipAngle = flip_angle;      % flip angle [rad]
@@ -58,6 +65,7 @@ scenarios. To fully benefit from the toolkit, it is indispensable to take a clos
     
     % set time interval from echo to RF pulse (includes crusher)
     crusher.tau = TR - TE;          % duration
+    crusher.p = p_crusher;          % zero-order gradient moment
     
     % desired number of samples
     n_TR = 100;
@@ -73,16 +81,16 @@ scenarios. To fully benefit from the toolkit, it is indispensable to take a clos
       cm.time( te );                % time to echo
     
       % only magnetization pathways with no dephasing by crushers contribute to the FID signal.
-      % this corresponds to cm.tau == 0, as explained in the article, linked above. 
-      % to avoid possible rounding problems, we replace the condition cm.tau == 0 by a more robust one.
+      % this corresponds to cm.p == [ O; O; O ], as explained in the article, linked above. 
+      % to avoid possible rounding problems, we replace the condition by a more robust one.
     
       fid = [];
-      fid.b_n = cm.occ & ( abs( cm.tau ) < 0.1 * cm.d_tau );   % cm.occ denotes occupied configurations
+      fid.b_n = cm.occ & ( max( abs( cm.p ), [], 1 ) < 0.1 * p_c );   % cm.occ denotes occupied configurations
     
       res = cm.sum( fid );          % extract FID
       m_xy( i ) = res.xy;           % store transverse component
     
-      cm.time( crusher );           % time to next RF pulse (assumed to include a crusher gradient)
+      cm.time( crusher );           % time to next RF pulse (includes crusher gradient)
     
     end
     % done
