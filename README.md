@@ -2,7 +2,7 @@
 
 # Background
 
-The continuous configuration model (CCM) (link follows) constitutes a representation
+The continuous configuration model (CCM) ([https://doi.org/10.1002/mrm.29101](https://doi.org/10.1002/mrm.29101)) constitutes a representation
 of arbitrary magnetic resonance imaging (MRI) sequences and tissues, which allows for
 a rigorous and transparent treatment of signal localization by
 selective excitation and/or spatial encoding.
